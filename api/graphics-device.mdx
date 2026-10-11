@@ -1,7 +1,7 @@
 ---
 title: "GraphicsDevice and GraphicsDeviceManager API Reference"
 sidebarTitle: "GraphicsDevice"
-description: "API reference for MonoGame's GraphicsDevice rendering pipeline and GraphicsDeviceManager configuration — clear, present, render targets, viewport, and device state."
+description: "API reference for MonoGame's GraphicsDevice and GraphicsDeviceManager — back buffer setup, Clear, render targets, draw calls, viewport, and device events."
 ---
 
 MonoGame exposes two closely related classes for graphics. `GraphicsDeviceManager` is the configuration layer — you create one in your `Game` constructor to specify back buffer size, profile, and fullscreen state. It manages creating and destroying the underlying `GraphicsDevice`. `GraphicsDevice` is the raw rendering API — you call `Clear`, set render states, bind buffers, and issue draw calls through it.

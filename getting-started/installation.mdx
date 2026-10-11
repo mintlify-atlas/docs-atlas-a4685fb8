@@ -44,7 +44,7 @@ Before installing MonoGame, make sure the following are in place:
     Run the following command in any terminal to pull the official MonoGame templates from NuGet:
 
     ```bash
-    dotnet new install MonoGame.Templates
+    dotnet new install MonoGame.Templates.CSharp
     ```
 
     This registers all MonoGame project templates with the `dotnet new` command. You only need to do this once per machine (or once per SDK major version).
@@ -173,14 +173,13 @@ If you want to contribute to MonoGame or use unreleased changes, you can build t
 
 ## Verifying Your Installation
 
-After completing the setup, confirm the MonoGame tools are on your path:
+After completing the setup, confirm the MonoGame templates are registered:
 
 ```bash
-# Check the installed templates
+# List all installed dotnet new templates filtered to MonoGame
 dotnet new list --tag monogame
-
-# Verify the content builder tool (installed with templates)
-dotnet tool list --global
 ```
 
-You should see `dotnet-mgcb`, `dotnet-mgcb-editor`, and `dotnet-mgfxc` listed among your global .NET tools.
+You should see entries for `mgdesktopgl`, `mgwindowsdx`, `mgandroid`, and `mgios` in the output. If the list is empty, re-run `dotnet new install MonoGame.Templates.CSharp` to register the templates.
+
+The MonoGame content tools (`mgcb`, `mgcb-editor`, `mgfxc`) are referenced as local .NET tools inside each generated project and are restored automatically when you run `dotnet restore` or `dotnet run` in the project folder.

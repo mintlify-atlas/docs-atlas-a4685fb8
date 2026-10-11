@@ -1,7 +1,7 @@
 ---
 title: "Content Pipeline API Reference: Importers and Processors"
 sidebarTitle: "Content Pipeline"
-description: "API reference for the MonoGame Content Pipeline. Covers ContentImporter, ContentProcessor, ContentImporterContext, ContentProcessorContext, and custom pipeline extensions."
+description: "API reference for the MonoGame Content Pipeline: ContentImporter, ContentProcessor, ContentProcessorContext, ContentTypeReader, and built-in importers."
 ---
 
 The MonoGame Content Pipeline is a build-time system that converts raw game assets (textures, models, audio, fonts, etc.) into platform-optimized `.xnb` binary files loaded at runtime by `ContentManager`. The pipeline is extensible: you can author **importers** that read custom file formats, **processors** that transform the imported data, and **type readers** that deserialize the final `.xnb` payload at runtime. All extension types live in the `Microsoft.Xna.Framework.Content.Pipeline` namespace and are compiled into a separate library (referenced by the `.mgcb` project, not the game itself).
@@ -340,7 +340,7 @@ protected override void LoadContent()
 
 **Content project entry (`.mgcb`):**
 
-```
+```text
 /importer:CsvDataImporter
 /processor:CsvDataProcessor
 /build:Data/LevelConfig.csv

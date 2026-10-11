@@ -1,7 +1,7 @@
 ---
-title: "MGCB: MonoGame Content Builder Command-Line Tool"
+title: "MGCB: MonoGame Content Builder Command-Line Reference"
 sidebarTitle: "mgcb"
-description: "mgcb is the MonoGame Content Builder CLI that compiles game assets into .xnb files. Learn installation, the .mgcb project format, command-line flags, and CI integration."
+description: "mgcb is the MonoGame content pipeline CLI. It compiles assets into .xnb files. Covers installation, .mgcb project format, command-line flags, and CI."
 ---
 
 The MonoGame Content Builder (`mgcb`) is the command-line tool at the heart of MonoGame's content pipeline. It reads a `.mgcb` project file and compiles each referenced asset — textures, audio clips, 3D models, sprite fonts, shaders, and more — into platform-specific `.xnb` binary files that MonoGame can load at runtime. By processing assets at build time rather than at runtime, `mgcb` ensures your game loads fast and that assets are optimally encoded for each target platform.
@@ -185,6 +185,7 @@ All flags use the `/name:value` syntax on Windows and `--name=value` on macOS/Li
 | `/processorParam:<n>=<v>` | `/P` | Set a processor parameter for the next `/build:` directive. |
 | `/build:<file>` | `/b` | Add a file to the build. |
 | `/copy:<file>` | — | Copy a file verbatim to the output directory. |
+| `/compress` | — | Compress the `.xnb` output files for smaller file sizes. |
 | `/reference:<assembly>` | `/f` | Add an assembly reference for resolving custom pipeline types. |
 | `/workingDir:<path>` | `/w` | Set the working directory for resolving relative paths. |
 | `/quiet` | `/q` | Suppress all output except errors. |

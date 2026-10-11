@@ -1,7 +1,7 @@
 ---
-title: "mgfxc: Compile HLSL Shaders for MonoGame"
+title: "mgfxc: MonoGame HLSL Effect Compiler and Shader Tool"
 sidebarTitle: "mgfxc"
-description: "mgfxc compiles MonoGame Effect (.fx) HLSL shader files into cross-platform .mgfx binaries. Learn installation, usage, platform targets, and the Effect file format."
+description: "mgfxc compiles MonoGame Effect (.fx) HLSL shaders into .mgfxo binaries. Learn installation, platform profiles, flags, and the Effect file format."
 ---
 
 `mgfxc` (MonoGame FX Compiler) is the command-line tool that compiles MonoGame Effect (`.fx`) files written in HLSL into cross-platform `.mgfxo` binaries. These compiled binaries are consumed by MonoGame's `Effect` class at runtime and drive the GPU rendering pipeline — vertex transforms, fragment shading, post-processing, and any other programmable stage your game requires. By compiling shaders at build time rather than at runtime, `mgfxc` catches syntax errors early and produces tightly-optimised platform-specific bytecode without requiring shader compiler libraries to be shipped with your game.

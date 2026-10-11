@@ -62,6 +62,12 @@ MonoGame 3.8.5 adds experimental support for two modern graphics APIs. These are
 | DesktopVK | Vulkan | Requires the [Vulkan SDK](https://vulkan.lunarg.com/) |
 | Windows DX12 | DirectX 12 | Windows only; DX12 ships with Windows by default |
 
+These preview targets share additional dependencies beyond the standard .NET SDK:
+
+- **[Vulkan SDK](https://vulkan.lunarg.com/)** — required for Vulkan targets. On macOS and Linux, run the `setup_env.sh` script after installation.
+- **[Java SDK](https://www.oracle.com/java/technologies/downloads/) (minimum version 17)** — required by the build tooling for both Vulkan and DX12 preview targets.
+- **DirectX 12** — Windows only; installed by default on modern Windows versions.
+
 <Tip>
   If you are building from source and want to try the Vulkan preview, make sure to run the `setup_env.sh` script on macOS and Linux after installing the Vulkan SDK.
 </Tip>

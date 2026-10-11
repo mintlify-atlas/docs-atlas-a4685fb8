@@ -1,5 +1,5 @@
 ---
-title: "SpriteBatch API Reference"
+title: "MonoGame SpriteBatch — 2D Sprite Rendering API Reference"
 sidebarTitle: "SpriteBatch"
 description: "Complete API reference for MonoGame's SpriteBatch class — Begin, Draw, DrawString, and End methods with all overloads and parameter descriptions."
 ---
@@ -249,6 +249,9 @@ public void DrawString(
 Identical signatures to the `string` overloads above but accept `System.Text.StringBuilder` to avoid string allocations in hot paths.
 
 ```csharp
+public void DrawString(SpriteFont spriteFont, StringBuilder text, Vector2 position, Color color,
+    float rotation, Vector2 origin, float scale, SpriteEffects effects, float layerDepth)
+
 public void DrawString(SpriteFont spriteFont, StringBuilder text, Vector2 position, Color color,
     float rotation, Vector2 origin, Vector2 scale, SpriteEffects effects, float layerDepth)
 

@@ -1,7 +1,7 @@
 ---
 title: "GraphicsDevice and GraphicsDeviceManager in MonoGame"
 sidebarTitle: "Graphics Device"
-description: "GraphicsDevice is MonoGame's core rendering interface. GraphicsDeviceManager configures it. Learn resolution, fullscreen, render targets, and presentation settings."
+description: "GraphicsDevice is MonoGame's core rendering interface and GraphicsDeviceManager configures it. Learn to set resolution, fullscreen, and render targets."
 ---
 
 MonoGame separates the concerns of *configuring* the graphics device from *using* it. `GraphicsDeviceManager` acts as a configuration and lifecycle controller — you set your desired resolution, profile, and fullscreen mode on it, then call `ApplyChanges()` to commit. `GraphicsDevice` is the lower-level rendering API you interact with every frame: clearing the back buffer, setting render targets, managing viewports, and issuing draw calls. Understanding how these two classes relate is the first step toward effective rendering in MonoGame.

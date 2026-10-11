@@ -4,7 +4,7 @@ sidebarTitle: "Game Loop"
 description: "Learn how MonoGame's fixed-timestep game loop works, when Initialize, LoadContent, Update, and Draw are called, and how to control timing."
 ---
 
-Every MonoGame game runs inside a loop that repeatedly calls two methods — `Update` and `Draw` — until the player quits. Understanding exactly when those calls happen, how time is measured between them, and how to control the pace of the loop is essential for writing smooth, predictable game behavior. This page covers the full lifecycle of a `Game` object, the `GameTime` struct that carries timing information into each call, and the properties that let you tune fixed-step vs. variable-step timing, VSync, and power usage when the window is inactive.
+Every MonoGame game runs inside a loop that repeatedly calls two methods — `Update` and `Draw` — until the player quits. Understanding exactly when those calls happen, how time is measured between them, and how to control the pace of the loop is essential for writing smooth, predictable game behavior. This page covers the full lifecycle of a `Game` object, the `GameTime` class that carries timing information into each call, and the properties that let you tune fixed-step vs. variable-step timing, VSync, and power usage when the window is inactive.
 
 ## Game Lifecycle
 
@@ -65,7 +65,7 @@ protected override void UnloadContent()
 }
 ```
 
-## The GameTime Struct
+## The GameTime Class
 
 Both `Update` and `Draw` receive a `GameTime` argument that carries timing data for the current frame:
 

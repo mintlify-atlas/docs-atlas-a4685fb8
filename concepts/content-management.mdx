@@ -1,7 +1,7 @@
 ---
 title: "Content Management: Loading and Unloading Game Assets"
 sidebarTitle: "Content Management"
-description: "ContentManager handles loading typed game assets from .xnb files compiled by the MonoGame Content Pipeline. Learn to load, share, and unload assets correctly."
+description: "ContentManager loads typed game assets from .xnb files compiled by the MonoGame Content Pipeline. Learn to load, cache, and unload assets correctly."
 ---
 
 Every sprite, sound, font, and shader in a MonoGame project travels through the Content Pipeline: source files (PNG, WAV, FBX, HLSL, …) are compiled at build time into platform-optimised `.xnb` binary files. At runtime, `ContentManager` reads those `.xnb` files, deserialises them into strongly-typed managed objects, and caches them so repeated calls return the same instance. Understanding `ContentManager`'s lifecycle prevents common pitfalls like double-loading assets, leaking GPU memory, or crashing on a disposed manager.
@@ -64,7 +64,7 @@ Content.Load<Texture2D>("C:/Game/Content/Textures/player");
     ```
 
     <Tip>
-      `ContentManager` can also load raw PNG/JPG/BMP image files as `Texture2D` without going through the Content Pipeline — just omit the extension and ensure the file exists next to the executable.
+      `ContentManager` can also load raw PNG/JPG/BMP image files as `Texture2D` without going through the Content Pipeline — just omit the extension and ensure the file exists under `RootDirectory` with the same relative path (e.g. `Content/Textures/player.png`).
     </Tip>
   </Tab>
   <Tab title="SpriteFont">

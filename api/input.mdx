@@ -218,7 +218,7 @@ Used for mouse buttons and gamepad D-pad directions.
 |-----------|---------|-------------|
 | `GetState(PlayerIndex)` | `GamePadState` | Returns state for the given player using `IndependentAxes` dead zone. |
 | `GetState(PlayerIndex, GamePadDeadZone)` | `GamePadState` | Returns state with the specified dead zone applied to both sticks. |
-| `GetState(PlayerIndex, GamePadDeadZone left, GamePadDeadZone right)` | `GamePadState` | Returns state with independent dead zones for each stick. |
+| `GetState(PlayerIndex, GamePadDeadZone leftDeadZoneMode, GamePadDeadZone rightDeadZoneMode)` | `GamePadState` | Returns state with independent dead zones for each stick. |
 | `GetState(int index)` | `GamePadState` | Integer-indexed variant, not limited to the four `PlayerIndex` values. |
 | `GetCapabilities(PlayerIndex)` | `GamePadCapabilities` | Returns capability flags for the given controller. |
 | `SetVibration(PlayerIndex, float leftMotor, float rightMotor)` | `bool` | Sets rumble intensity (0–1). Returns `false` if unsupported. |

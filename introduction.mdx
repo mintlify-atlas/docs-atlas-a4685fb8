@@ -38,7 +38,7 @@ MonoGame is a **framework**, not an engine. It gives you a thin, expressive laye
     SpriteBatch provides fast, batched 2D drawing with sorting, blending, and custom shader support
   </Card>
   <Card title="3D Rendering" icon="cube">
-    Load FBX/OBJ models, apply built-in PBR-style effects, and render with full depth and stencil control
+    Load FBX/OBJ models, apply built-in effects (BasicEffect, SkinnedEffect, etc.), and render with full depth and stencil control
   </Card>
   <Card title="Content Pipeline" icon="wrench">
     MGCB compiles textures, audio, fonts, models, and shaders into optimized .xnb assets at build time
@@ -72,7 +72,7 @@ public class Game1 : Game
 {
     private GraphicsDeviceManager _graphics;
     private SpriteBatch _spriteBatch;
-    private Texture2D _logo;
+    private Texture2D _pixel;
 
     public Game1()
     {
@@ -84,7 +84,10 @@ public class Game1 : Game
     protected override void LoadContent()
     {
         _spriteBatch = new SpriteBatch(GraphicsDevice);
-        _logo = Content.Load<Texture2D>("logo");
+
+        // Create a 1×1 white texture — a handy building block for solid-color drawing
+        _pixel = new Texture2D(GraphicsDevice, 1, 1);
+        _pixel.SetData(new[] { Color.White });
     }
 
     protected override void Draw(GameTime gameTime)
@@ -92,7 +95,7 @@ public class Game1 : Game
         GraphicsDevice.Clear(Color.CornflowerBlue);
 
         _spriteBatch.Begin();
-        _spriteBatch.Draw(_logo, Vector2.Zero, Color.White);
+        _spriteBatch.Draw(_pixel, new Rectangle(100, 100, 200, 100), Color.Red);
         _spriteBatch.End();
 
         base.Draw(gameTime);

@@ -1,7 +1,7 @@
 ---
-title: "Keyboard and Mouse Input Handling in MonoGame"
+title: "Keyboard and Mouse Input Handling in MonoGame Games"
 sidebarTitle: "Keyboard & Mouse"
-description: "Read keyboard and mouse state in MonoGame using Keyboard.GetState() and Mouse.GetState(). Detect key presses, releases, and mouse position and button state."
+description: "Read keyboard and mouse state in MonoGame using Keyboard.GetState() and Mouse.GetState(). Detect key presses, releases, mouse position and button state."
 ---
 
 MonoGame uses a **polling-based input model** for keyboard and mouse. Each frame you call `Keyboard.GetState()` or `Mouse.GetState()` to get an immutable snapshot of the current input state, then compare it to the previous frame's snapshot to detect transitions like "just pressed" or "just released." This approach keeps your `Update` loop deterministic and avoids missed inputs between frames.
@@ -235,16 +235,13 @@ Mouse.SetPosition(centerX, centerY);
 
 ### Cursor Appearance
 
-Set the cursor shape with `Mouse.SetCursor(MouseCursor cursor)` or via `Window.Cursor`:
+Set the cursor shape with `Mouse.SetCursor(MouseCursor cursor)`:
 
 ```csharp
-// Set globally
-Mouse.SetCursor(MouseCursor.Hand);
-
-// Or via the window property
-Window.Cursor = MouseCursor.IBeam;  // text cursor over input fields
-Window.Cursor = MouseCursor.Wait;   // loading
-Window.Cursor = MouseCursor.Arrow;  // default arrow
+Mouse.SetCursor(MouseCursor.Hand);   // pointer / interactive element
+Mouse.SetCursor(MouseCursor.IBeam);  // text cursor over input fields
+Mouse.SetCursor(MouseCursor.Wait);   // loading
+Mouse.SetCursor(MouseCursor.Arrow);  // default arrow
 ```
 
 ### Hiding the Cursor

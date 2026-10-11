@@ -1,7 +1,7 @@
 ---
 title: "Game Components: Modular, Reusable Subsystems in MonoGame"
 sidebarTitle: "Game Components"
-description: "GameComponent and DrawableGameComponent let you split game logic into modular, independently updatable and drawable subsystems that integrate with the game loop."
+description: "GameComponent and DrawableGameComponent split game logic into modular subsystems that automatically integrate with MonoGame's update and draw loop."
 ---
 
 As a game grows, stuffing all logic directly into `Game1` becomes unmanageable. MonoGame's component system gives you a structured way to split concerns: each subsystem becomes a self-contained class that hooks into the main game loop automatically. Once you call `Components.Add(myComponent)`, MonoGame handles calling `Initialize`, `Update`, and `Draw` at the right times — you never wire up the calls manually.

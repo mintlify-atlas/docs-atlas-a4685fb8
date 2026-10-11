@@ -1,7 +1,7 @@
 ---
 title: "Rendering Text with SpriteFont in MonoGame"
 sidebarTitle: "SpriteFont"
-description: "SpriteFont renders bitmap text in MonoGame. Learn how to create .spritefont descriptor files, load fonts through the content pipeline, and draw text with SpriteBatch."
+description: "SpriteFont renders bitmap text in MonoGame. Define .spritefont descriptor files, load fonts via the content pipeline, and draw text with SpriteBatch."
 ---
 
 `SpriteFont` is MonoGame's bitmap-font system. At build time the Content Pipeline reads a TrueType or OpenType font installed on your machine, rasterises every requested character into a texture atlas, and saves the result as a `.xnb` asset. At runtime you load that atlas with `Content.Load<SpriteFont>` and pass it to `SpriteBatch.DrawString` — there is no text-shaping happening on the GPU. This keeps text rendering simple, predictable, and extremely fast.

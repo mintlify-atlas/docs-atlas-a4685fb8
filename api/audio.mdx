@@ -1,5 +1,5 @@
 ---
-title: "Audio API Reference: SoundEffect, SoundEffectInstance, 3D Audio"
+title: "Audio API Reference: SoundEffect, 3D Audio, Microphone"
 sidebarTitle: "Audio"
 description: "API reference for MonoGame audio classes: SoundEffect, SoundEffectInstance, DynamicSoundEffectInstance, AudioEmitter, and AudioListener."
 ---
@@ -72,7 +72,7 @@ var sfx = new SoundEffect(
 
 | Signature | Returns | Description |
 |-----------|---------|-------------|
-| `SoundEffect.FromStream(Stream stream)` | `SoundEffect` | Loads a wave file from a `Stream`. The stream must contain RIFF/PCM data pointing to the beginning of the file. |
+| `SoundEffect.FromStream(Stream stream)` | `SoundEffect` | Loads a wave file from a `Stream`. The stream must point to the head of a valid wave file in the RIFF bitstream format. |
 | `SoundEffect.FromFile(string path)` | `SoundEffect` | Opens a file by path and calls `FromStream` internally. |
 | `SoundEffect.GetSampleDuration(int sizeInBytes, int sampleRate, AudioChannels channels)` | `TimeSpan` | Calculates the duration of a 16-bit PCM buffer of the given size. |
 | `SoundEffect.GetSampleSizeInBytes(TimeSpan duration, int sampleRate, AudioChannels channels)` | `int` | Calculates the byte count needed for a 16-bit PCM buffer of the given duration. |
@@ -190,7 +190,7 @@ var dynSfx = new DynamicSoundEffectInstance(
 
 | Event | Signature | Description |
 |-------|-----------|-------------|
-| `BufferNeeded` | `EventHandler<EventArgs>` | Raised when `PendingBufferCount` falls to 2 or below. Subscribe to this event to feed the next chunk of PCM data. |
+| `BufferNeeded` | `EventHandler<EventArgs>` | Raised when `PendingBufferCount` falls below 3 (the internal target buffer count). Subscribe to this event to feed the next chunk of PCM data. |
 
 ### Methods
 
@@ -322,11 +322,15 @@ sfx.Play();
 |--------|------|-------------|
 | `Microphone.All` | `ReadOnlyCollection<Microphone>` | All recording devices detected on the system. Querying this list initializes the audio system. |
 | `Microphone.Default` | `Microphone` | The system default microphone, or `null` if none. |
-| `Name` | `string` | Human-readable device name. |
+| `Name` | `string` | Human-readable device name. Declared as a `readonly` field. |
+| `BufferDuration` | `TimeSpan` | Gets or sets the capture buffer duration. Must be between 100 ms and 1000 ms, aligned to 10 ms boundaries. Defaults to 1000 ms. |
+| `IsHeadset` | `bool` | `true` on mobile platforms (iOS/Android) where the microphone is treated as a wired headset; `false` on all other platforms. |
+| `SampleRate` | `int` | Sample rate of the captured audio in Hz. Default is 44100. |
 | `State` | `MicrophoneState` | `Started` or `Stopped`. |
 | `Start()` | `void` | Begins recording. |
 | `Stop()` | `void` | Ends recording. |
 | `GetData(byte[] buffer)` | `int` | Copies recorded PCM data into `buffer`. Returns bytes written. |
+| `GetData(byte[] buffer, int offset, int count)` | `int` | Copies up to `count` bytes of recorded PCM data into `buffer` starting at `offset`. Returns bytes written. |
 | `BufferReady` | `EventHandler<EventArgs>` | Raised periodically when new PCM data is available. |
 
 <Note>

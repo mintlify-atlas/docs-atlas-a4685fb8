@@ -35,7 +35,7 @@ protected override void LoadContent()
 ```
 
 <Note>
-  The `Model` constructor is internal — you always obtain instances from the Content Pipeline, never by calling `new Model(...)` directly in game code.
+  Although `Model` has a public constructor for advanced use cases, you should always obtain model instances through the Content Pipeline via `Content.Load<Model>(...)` in game code rather than constructing models manually.
 </Note>
 
 ## The Model Object

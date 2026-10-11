@@ -83,7 +83,7 @@ public static Texture2D FromStream(GraphicsDevice graphicsDevice, Stream stream,
 The optional `colorProcessor` delegate receives the raw RGBA byte array before it is uploaded to the GPU, allowing you to perform format conversions or premultiply alpha.
 
 <Warning>
-`FromFile` and `FromStream` do **not** premultiply the alpha channel by default. Transparent areas will have black fringes when used with `BlendState.AlphaBlend`. Use the `ContentManager` pipeline (which premultiplies) or supply a `colorProcessor` to fix this at load time.
+`FromFile` and `FromStream` apply `DefaultColorProcessors.ZeroTransparentPixels` by default, which zeroes the RGB channels of fully transparent pixels but does **not** premultiply alpha. Partially transparent pixels may show fringing with `BlendState.AlphaBlend`. Use the `ContentManager` pipeline (which premultiplies) or pass `DefaultColorProcessors.PremultiplyAlpha` as the `colorProcessor` argument to fix this.
 </Warning>
 
 ### Properties

@@ -62,7 +62,7 @@ Texture2D runtimeTexture = Texture2D.FromFile(GraphicsDevice, "Content/Textures/
 ```
 
 <Warning>
-`Texture2D.FromFile` is implemented via `FromStream` internally and does **not** premultiply alpha automatically. Transparent pixels may appear with dark fringes when blended unless you process the alpha yourself. Use the content pipeline (`ContentManager.Load`) for production assets.
+`Texture2D.FromFile` is implemented via `FromStream` internally. By default it applies `ZeroTransparentPixels` processing, which zeroes out the RGB channels of any fully-transparent pixel (standard XNA behaviour). It does **not** premultiply alpha. Use the content pipeline (`ContentManager.Load`) for production assets, which applies full premultiplied-alpha processing at build time.
 </Warning>
 
 ### From a Stream
@@ -76,13 +76,13 @@ using (var stream = File.OpenRead("saves/screenshot.png"))
 }
 ```
 
-Like `FromFile`, `FromStream` does not premultiply alpha by default. A `colorProcessor` overload is available if you need to transform the raw RGBA bytes before they are uploaded to the GPU:
+Like `FromFile`, `FromStream` applies `ZeroTransparentPixels` processing by default (standard XNA behaviour). An overload that accepts an `Action<byte[]> colorProcessor` is available if you need to transform the raw RGBA bytes before they are uploaded to the GPU — for example, to premultiply alpha:
 
 ```csharp
 Texture2D tex = Texture2D.FromStream(GraphicsDevice, stream,
     colorProcessor: bytes =>
     {
-        // Premultiply alpha manually
+        // Premultiply alpha so the texture works correctly with BlendState.AlphaBlend
         for (int i = 0; i < bytes.Length; i += 4)
         {
             float a = bytes[i + 3] / 255f;

@@ -1,7 +1,7 @@
 ---
-title: "Game Class API Reference"
+title: "MonoGame Game Class — Lifecycle, Properties, and Events"
 sidebarTitle: "Game"
-description: "Complete API reference for the MonoGame Game class. Documents the constructor, lifecycle methods (Initialize, LoadContent, Update, Draw), properties, and events."
+description: "API reference for the MonoGame Game class: constructor, lifecycle methods (Initialize, LoadContent, Update, Draw), properties, and events."
 ---
 
 The `Game` class is the central entry point for all MonoGame applications. It manages the game window, sets up the graphics device, and drives the main game loop by calling `Update` and `Draw` on each tick. Every MonoGame project subclasses `Game` and overrides the lifecycle methods to inject game-specific logic.
@@ -70,7 +70,6 @@ public Game()
 | `InactiveSleepTime` | `TimeSpan` | How long the game sleeps per tick while it is not the focused application. Defaults to 20 ms. Must be ≥ `TimeSpan.Zero`. |
 | `MaxElapsedTime` | `TimeSpan` | Maximum accumulated elapsed time before the game stops trying to catch up. Defaults to 500 ms. MonoGame-specific extension. |
 | `LaunchParameters` | `LaunchParameters` | Command-line or platform-specific startup parameters passed to the game. |
-| `IsRunningSlowly` | `bool` | Exposed via `GameTime.IsRunningSlowly`. Set automatically when the game accumulates more than 5 frames of update lag. |
 
 ---
 

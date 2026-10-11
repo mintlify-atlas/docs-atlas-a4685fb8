@@ -1,7 +1,7 @@
 ---
 title: "Built-in Effects and Custom Shaders in MonoGame"
 sidebarTitle: "Effects"
-description: "MonoGame ships BasicEffect, SkinnedEffect, EnvironmentMapEffect, and more. Learn to configure built-in effects and load custom HLSL shaders compiled with mgfxc."
+description: "MonoGame ships BasicEffect, SkinnedEffect, EnvironmentMapEffect, and more. Configure built-in effects and load custom HLSL shaders compiled with mgfxc."
 ---
 
 Every pixel drawn in a 3D MonoGame scene passes through an `Effect` — a compiled GPU program consisting of one or more techniques, each containing one or more passes. MonoGame ships five built-in effects that cover the most common use cases without requiring you to write a single line of HLSL. When you need full control you can compile custom shaders with the `mgfxc` tool and load them through the Content Pipeline exactly like any other asset.
