@@ -1,0 +1,305 @@
+---
+title: "MGCB Editor: GUI for MonoGame Content Pipeline Management"
+sidebarTitle: "MGCB Editor"
+description: "mgcb-editor is the MonoGame Content Builder GUI. Add, remove, and configure game assets visually, set processor parameters, and trigger builds without the CLI."
+---
+
+The MGCB Editor (`mgcb-editor`) is a cross-platform graphical front-end for MonoGame's content pipeline. Instead of editing `.mgcb` project files by hand, you can add assets, configure importers and processors, adjust processor parameters, and trigger builds — all through a visual interface. Under the hood, every action in the editor writes directly to the plain-text `.mgcb` file, so your project file is always in sync with what you see on screen. The editor is built with [Eto.Forms](https://github.com/picoe/Eto) and runs natively on Windows, macOS, and Linux.
+
+<CardGroup cols={2}>
+  <Card title="Visual asset management" icon="images">
+    Browse your content tree, add or remove assets, and organise files into folders without touching the CLI.
+  </Card>
+  <Card title="Processor parameter editor" icon="sliders">
+    Select any asset and configure its importer, processor, and all processor parameters from the Properties panel.
+  </Card>
+  <Card title="One-click builds" icon="play">
+    Trigger full builds, rebuilds, or cleans with a single menu action or keyboard shortcut.
+  </Card>
+  <Card title="Plain-text project file" icon="file-code">
+    The `.mgcb` file is always human-readable — edits made in the GUI are immediately reflected in the file on disk.
+  </Card>
+</CardGroup>
+
+---
+
+## Installation
+
+`mgcb-editor` is distributed as a .NET global tool. Requires the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet) or later.
+
+```bash
+dotnet tool install --global dotnet-mgcb-editor
+```
+
+To update an existing installation:
+
+```bash
+dotnet tool update --global dotnet-mgcb-editor
+```
+
+<Note>
+  On macOS and Linux, ensure `~/.dotnet/tools` is on your `PATH`. If the command is not found after installation, add `export PATH="$PATH:$HOME/.dotnet/tools"` to your shell profile (`.bashrc`, `.zshrc`, etc.) and restart your terminal.
+</Note>
+
+### Associating `.mgcb` Files (Optional)
+
+After installation, you can register `mgcb-editor` as the default handler for `.mgcb` files so that double-clicking a project file opens the editor directly.
+
+<Tabs>
+  <Tab title="Windows">
+    Right-click any `.mgcb` file → **Open with** → **Choose another app** → browse to `mgcb-editor.exe` (found in `%USERPROFILE%\.dotnet\tools\`). Check **Always use this app** to make the association permanent.
+  </Tab>
+  <Tab title="macOS">
+    ```bash
+    # Register the file association (run once)
+    dotnet tool run dotnet-mgcb-editor-mgcb
+    ```
+    After running the above, `.mgcb` files will open in MGCB Editor when double-clicked in Finder.
+  </Tab>
+  <Tab title="Linux">
+    Use your desktop environment's file manager to associate `.mgcb` files with the `mgcb-editor` command, or create a `.desktop` file under `~/.local/share/applications/`.
+  </Tab>
+</Tabs>
+
+---
+
+## Opening the Editor
+
+Open a project file from the command line:
+
+```bash
+mgcb-editor Content/Content.mgcb
+```
+
+Or launch the editor without a file and open a project from the **File** menu:
+
+```bash
+mgcb-editor
+```
+
+---
+
+## UI Layout
+
+The editor window is divided into three main areas:
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Menu bar  │  Tool bar                               │
+├──────────────────────────┬──────────────────────────┤
+│                          │                          │
+│   Content Tree           │   Properties Panel       │
+│   (left panel)           │   (right panel)          │
+│                          │                          │
+│   ▼ Content              │   Build Action:  Build   │
+│     ├─ Textures/         │   Importer:  TextureImp… │
+│     │    └─ player.png   │   Processor: TexturePro… │
+│     ├─ Fonts/            │   ├─ ColorKeyEnabled:    │
+│     │    └─ arial.spri…  │   │     False            │
+│     └─ Audio/            │   ├─ GenerateMipmaps:    │
+│          └─ jump.wav     │         False            │
+│                          │                          │
+├──────────────────────────┴──────────────────────────┤
+│   Output Log (bottom)                               │
+│   Build started 2024-09-12 10:32:01                 │
+│   Building player.png                               │
+│   Build 1 succeeded, 0 failed.                      │
+└─────────────────────────────────────────────────────┘
+```
+
+### Content Tree (Left Panel)
+
+The content tree displays the folder and file hierarchy of your project. The root node represents the project itself. Expanding folders reveals individual assets. Clicking any node selects it and populates the Properties panel on the right.
+
+### Properties Panel (Right Panel)
+
+When an **asset** is selected, the Properties panel shows:
+
+- **Build Action** — `Build` (process through the pipeline) or `Copy` (copy verbatim to the output directory).
+- **Importer** — the class name of the importer responsible for reading the source file.
+- **Processor** — the class name of the processor that transforms the imported data.
+- **Processor Parameters** — an expandable list of name/value pairs for the selected processor.
+
+When the **project root** is selected, the Properties panel shows global project settings: output directory, intermediate directory, platform, graphics profile, and compress setting.
+
+### Output Log (Bottom Panel)
+
+The output log streams the live output of `mgcb` during a build, including per-asset status, warnings, and errors. After the build finishes, a summary line reports how many assets succeeded and how many failed.
+
+---
+
+## Managing Assets
+
+### Adding Existing Assets
+
+<Steps>
+  <Step title="Open the Edit menu">
+    Go to **Edit → Add → Existing Item…** (or right-click in the Content Tree and choose **Add → Existing Item…**).
+  </Step>
+  <Step title="Select your file">
+    Navigate to the source file on disk and click **Open**. The file is added to the currently selected folder in the content tree.
+  </Step>
+  <Step title="Verify importer and processor">
+    The editor automatically selects importer and processor defaults based on the file extension. Check the Properties panel to confirm, and adjust if needed.
+  </Step>
+</Steps>
+
+You can also **drag and drop** files or folders from your operating system's file manager directly onto the content tree.
+
+### Adding a New Folder
+
+Go to **Edit → Add → New Folder**, enter the folder name in the dialog, and press **OK**. Folders are reflected in both the tree view and the `.mgcb` file's path structure.
+
+### Removing Assets
+
+Select an asset or folder in the content tree and press **Delete** (or go to **Edit → Exclude**). You are prompted whether to exclude the item from the project (removes it from `.mgcb`) or delete the source file from disk.
+
+### Renaming Assets
+
+Select an asset, go to **Edit → Rename**, type the new name, and press **Enter**.
+
+---
+
+## Configuring Importers and Processors
+
+Each asset in MonoGame's pipeline is handled by a pair: an **importer** that reads the raw file and an **processor** that converts the imported data into the final runtime format.
+
+<Steps>
+  <Step title="Select an asset">
+    Click the asset in the Content Tree. Its current importer, processor, and parameters appear in the Properties panel.
+  </Step>
+  <Step title="Change the importer">
+    Click the **Importer** dropdown in the Properties panel and select a different importer class. The list is populated from all registered pipeline assemblies.
+  </Step>
+  <Step title="Change the processor">
+    Click the **Processor** dropdown and select a processor. When the importer changes, the processor is automatically reset to the default that matches the importer's output type.
+  </Step>
+  <Step title="Edit processor parameters">
+    Expand the processor parameters section. Each parameter is displayed as a name/value field. Click a value to edit it inline. Changes are saved immediately to the `.mgcb` file.
+  </Step>
+</Steps>
+
+---
+
+## Building Content
+
+### Build
+
+**Build → Build** (keyboard shortcut: **F6**) runs `mgcb` internally with incremental logic — only assets that have changed since the last build are reprocessed.
+
+### Rebuild All
+
+**Build → Rebuild All** passes the `/rebuild` flag to `mgcb`, forcing all assets to be reprocessed from scratch regardless of cache state.
+
+### Clean
+
+**Build → Clean** passes the `/clean` flag to `mgcb`, deleting all previously compiled `.xnb` files and intermediate cache data.
+
+### Cancel
+
+While a build is running, **Build → Cancel Build** terminates the `mgcb` process.
+
+<Warning>
+  Closing the editor while a build is in progress cancels the build. Always wait for the build to finish or cancel it explicitly before closing.
+</Warning>
+
+---
+
+## Project Settings
+
+Select the **root node** of the Content Tree (labelled with the project name) to view and edit project-level settings in the Properties panel:
+
+| Setting | Description |
+|---|---|
+| **Output Directory** | Where compiled `.xnb` files are written. Supports `$(Platform)`, `$(Configuration)`, and `$(Profile)` tokens. |
+| **Intermediate Directory** | Where incremental build cache files are stored. |
+| **Platform** | Target platform (`DesktopGL`, `Windows`, `Android`, `iOS`, etc.). |
+| **Profile** | Graphics profile: `HiDef` or `Reach`. |
+| **Compress** | Whether to compress `.xnb` output. |
+
+---
+
+## Step-by-Step Walkthrough: Adding a Texture
+
+The following walkthrough takes you from a freshly opened project to a compiled texture with `ColorKeyEnabled` disabled.
+
+<Steps>
+  <Step title="Open the project">
+    Launch the editor and open your project file:
+
+    ```bash
+    mgcb-editor Content/Content.mgcb
+    ```
+
+    The content tree populates with existing assets. If the project is new, the tree shows only the root node.
+  </Step>
+
+  <Step title="Add the texture">
+    Go to **Edit → Add → Existing Item…**. In the file picker, navigate to your texture file (e.g. `Content/Textures/player.png`) and click **Open**.
+
+    The file appears in the content tree under `Textures/`:
+
+    ```
+    ▼ Content
+      └─ Textures/
+           └─ player.png
+    ```
+  </Step>
+
+  <Step title="Verify the importer and processor">
+    Click `player.png` in the content tree. The Properties panel shows:
+
+    | Field | Value |
+    |---|---|
+    | Build Action | Build |
+    | Importer | TextureImporter |
+    | Processor | TextureProcessor |
+
+    These defaults are correct for a PNG texture. No change needed.
+  </Step>
+
+  <Step title="Disable ColorKeyEnabled">
+    In the Properties panel, expand the **Processor Parameters** section. Locate `ColorKeyEnabled` and change its value from `True` to `False`.
+
+    The editor writes the change to `Content.mgcb` immediately:
+
+    ```
+    /importer:TextureImporter
+    /processor:TextureProcessor
+    /processorParam:ColorKeyEnabled=False
+    /build:Textures/player.png
+    ```
+  </Step>
+
+  <Step title="Build the project">
+    Press **F6** (or go to **Build → Build**). The Output Log shows:
+
+    ```
+    Build started ...
+    Building Textures/player.png
+    Build 1 succeeded, 0 failed.
+    ```
+
+    The compiled `player.png.xnb` file is written to the output directory (`bin/DesktopGL/` by default).
+  </Step>
+
+  <Step title="Load in your game">
+    In your game code, load the compiled texture:
+
+    ```csharp
+    Texture2D playerTexture = Content.Load<Texture2D>("Textures/player");
+    ```
+
+    Note that the `.xnb` extension is omitted from the asset name — MonoGame appends it automatically.
+  </Step>
+</Steps>
+
+---
+
+## Editing the `.mgcb` File Directly
+
+Because the `.mgcb` file is plain text, you can open it in any text editor alongside the GUI. Any changes you save to the file on disk are reflected in the editor the next time the project is opened (or when you reload it via **File → Open Recent**).
+
+<Tip>
+  For bulk operations — such as changing the platform for all assets at once, or adding a large number of files — editing the `.mgcb` file directly in a text editor is often faster than using the GUI.
+</Tip>

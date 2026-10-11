@@ -1,0 +1,366 @@
+---
+title: "Texture2D, Texture3D, and TextureCube API Reference"
+sidebarTitle: "Textures"
+description: "API reference for MonoGame texture types: Texture2D, Texture3D, and TextureCube. Covers constructors, GetData, SetData, FromStream, and SurfaceFormat."
+---
+
+MonoGame exposes three primary texture types, all inheriting from the abstract `Texture` base class. `Texture2D` is the workhorse for sprites, terrain, and UI. `Texture3D` stores volumetric data. `TextureCube` holds six faces of a cube (environment maps, skyboxes).
+
+## Namespace
+
+```
+Microsoft.Xna.Framework.Graphics
+```
+
+---
+
+## Texture (abstract base)
+
+All texture types share the following members from the `Texture` base class.
+
+| Member | Type | Description |
+|---|---|---|
+| `GraphicsDevice` | `GraphicsDevice` | The device this texture was created on. |
+| `LevelCount` | `int` | Number of mipmap levels (1 = no mipmaps). |
+| `Format` | `SurfaceFormat` | Pixel format of the texture. |
+| `IsDisposed` | `bool` | `true` after `Dispose()` has been called. |
+| `Dispose()` | method | Releases GPU memory. After calling, the texture must not be used. |
+
+---
+
+## Texture2D
+
+A 2D grid of texels. The most commonly used texture type, suitable for sprites, UI images, normal maps, shadow maps, etc.
+
+### Constructors
+
+```csharp
+// Basic: Color format, no mipmaps
+public Texture2D(GraphicsDevice graphicsDevice, int width, int height)
+
+// With mipmap and format control
+public Texture2D(GraphicsDevice graphicsDevice, int width, int height,
+                 bool mipmap, SurfaceFormat format)
+
+// With texture array support
+public Texture2D(GraphicsDevice graphicsDevice, int width, int height,
+                 bool mipmap, SurfaceFormat format, int arraySize)
+```
+
+<ParamField path="graphicsDevice" type="GraphicsDevice" required>
+  Throws `ArgumentNullException` if `null`.
+</ParamField>
+<ParamField path="width" type="int" required>
+  Width in texels. Must be > 0.
+</ParamField>
+<ParamField path="height" type="int" required>
+  Height in texels. Must be > 0.
+</ParamField>
+<ParamField path="mipmap" type="bool">
+  When `true`, mipmap levels are automatically computed and stored. `LevelCount` is set to `floor(log2(max(width, height))) + 1`.
+</ParamField>
+<ParamField path="format" type="SurfaceFormat">
+  Pixel format. Default `SurfaceFormat.Color` (32-bit RGBA).
+</ParamField>
+<ParamField path="arraySize" type="int">
+  Number of texture array slices (requires `HiDef` profile and device support). Throws if `arraySize > 1` and texture arrays are not supported.
+</ParamField>
+
+### Static Factory Methods
+
+```csharp
+// Load from a file path (bmp, gif, jpg, png, tif, dds)
+public static Texture2D FromFile(GraphicsDevice graphicsDevice, string path)
+public static Texture2D FromFile(GraphicsDevice graphicsDevice, string path,
+                                  Action<byte[]> colorProcessor)
+
+// Load from any readable Stream
+public static Texture2D FromStream(GraphicsDevice graphicsDevice, Stream stream)
+public static Texture2D FromStream(GraphicsDevice graphicsDevice, Stream stream,
+                                    Action<byte[]> colorProcessor)
+```
+
+The optional `colorProcessor` delegate receives the raw RGBA byte array before it is uploaded to the GPU, allowing you to perform format conversions or premultiply alpha.
+
+<Warning>
+`FromFile` and `FromStream` do **not** premultiply the alpha channel by default. Transparent areas will have black fringes when used with `BlendState.AlphaBlend`. Use the `ContentManager` pipeline (which premultiplies) or supply a `colorProcessor` to fix this at load time.
+</Warning>
+
+### Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `Width` | `int` | Width in texels. |
+| `Height` | `int` | Height in texels. |
+| `Bounds` | `Rectangle` | `new Rectangle(0, 0, Width, Height)`. |
+
+### SetData Methods
+
+Upload CPU-side data to the texture.
+
+```csharp
+// Simplest: fill entire mip level 0
+public void SetData<T>(T[] data) where T : struct
+
+// With offset and count
+public void SetData<T>(T[] data, int startIndex, int elementCount) where T : struct
+
+// Specific mip level and/or region
+public void SetData<T>(int level, Rectangle? rect, T[] data,
+                        int startIndex, int elementCount) where T : struct
+
+// Texture array slice support
+public void SetData<T>(int level, int arraySlice, Rectangle? rect, T[] data,
+                        int startIndex, int elementCount) where T : struct
+```
+
+`T` must be a blittable struct whose size divides evenly into the texel size of `Format` (e.g., `Color` for `SurfaceFormat.Color`, `float` for `SurfaceFormat.Single`).
+
+### GetData Methods
+
+Read texel data back to CPU memory.
+
+```csharp
+public void GetData<T>(T[] data) where T : struct
+
+public void GetData<T>(T[] data, int startIndex, int elementCount) where T : struct
+
+public void GetData<T>(int level, Rectangle? rect, T[] data,
+                        int startIndex, int elementCount) where T : struct
+
+public void GetData<T>(int level, int arraySlice, Rectangle? rect, T[] data,
+                        int startIndex, int elementCount) where T : struct
+```
+
+<Warning>
+`GetData` causes a GPU–CPU synchronisation stall and is very slow. Avoid calling it every frame. Use a `RenderTarget2D` and read from it if you need per-frame pixel data.
+</Warning>
+
+### Save Methods
+
+```csharp
+public void SaveAsPng(Stream stream, int width, int height)
+public void SaveAsJpeg(Stream stream, int width, int height)
+```
+
+Encodes and writes the texture to `stream` at the specified output dimensions.
+
+### Reload
+
+```csharp
+public void Reload(Stream textureStream)
+```
+
+Re-uploads texture data from `textureStream` after a GL context loss (Android / iOS). The texture must have been originally created with `FromStream`.
+
+### Example
+
+```csharp
+// Create a 4×4 checkerboard texture at runtime
+var tex = new Texture2D(GraphicsDevice, 4, 4);
+var colors = new Color[16];
+for (int i = 0; i < 16; i++)
+    colors[i] = ((i / 4 + i % 4) % 2 == 0) ? Color.White : Color.Black;
+tex.SetData(colors);
+
+// Load from file
+var logo = Texture2D.FromFile(GraphicsDevice, "logo.png");
+```
+
+---
+
+## Texture3D
+
+A 3D volume texture (also called a volume texture). Each texel is addressed by `(u, v, w)`. Mipmap slice counts are always 1 in the public API.
+
+### Constructor
+
+```csharp
+public Texture3D(GraphicsDevice graphicsDevice,
+                 int width, int height, int depth,
+                 bool mipMap, SurfaceFormat format)
+```
+
+<ParamField path="depth" type="int" required>
+  Number of depth slices. Must be > 0.
+</ParamField>
+
+### Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `Width` | `int` | Width in texels. |
+| `Height` | `int` | Height in texels. |
+| `Depth` | `int` | Depth (number of slices). |
+
+### SetData / GetData
+
+```csharp
+// Full volume
+public void SetData<T>(T[] data) where T : struct
+public void SetData<T>(T[] data, int startIndex, int elementCount) where T : struct
+
+// Sub-volume (box region)
+public void SetData<T>(int level,
+    int left, int top, int right, int bottom, int front, int back,
+    T[] data, int startIndex, int elementCount) where T : struct
+
+public void GetData<T>(T[] data) where T : struct
+public void GetData<T>(T[] data, int startIndex, int elementCount) where T : struct
+public void GetData<T>(int level,
+    int left, int top, int right, int bottom, int front, int back,
+    T[] data, int startIndex, int elementCount) where T : struct
+```
+
+The box region is specified as inclusive `[left, right)` × `[top, bottom)` × `[front, back)`.
+
+---
+
+## TextureCube
+
+A cube texture consisting of six 2D faces of equal size (`Size × Size`). Used for environment maps, reflection maps, and skyboxes.
+
+### Constructor
+
+```csharp
+public TextureCube(GraphicsDevice graphicsDevice,
+                   int size, bool mipMap, SurfaceFormat format)
+```
+
+<ParamField path="size" type="int" required>
+  Width and height of each face in texels. Must be > 0.
+</ParamField>
+
+### Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `Size` | `int` | Width/height of each cube face. |
+
+### SetData / GetData
+
+Each operation targets one face, identified by `CubeMapFace`.
+
+```csharp
+// Full face
+public void SetData<T>(CubeMapFace face, T[] data) where T : struct
+public void SetData<T>(CubeMapFace face, T[] data, int startIndex, int elementCount) where T : struct
+
+// Specific mip level and/or region
+public void SetData<T>(CubeMapFace face, int level, Rectangle? rect,
+                        T[] data, int startIndex, int elementCount) where T : struct
+
+public void GetData<T>(CubeMapFace cubeMapFace, T[] data) where T : struct
+public void GetData<T>(CubeMapFace cubeMapFace, T[] data,
+                        int startIndex, int elementCount) where T : struct
+public void GetData<T>(CubeMapFace cubeMapFace, int level, Rectangle? rect,
+                        T[] data, int startIndex, int elementCount) where T : struct
+```
+
+**`CubeMapFace` enum values:** `PositiveX`, `NegativeX`, `PositiveY`, `NegativeY`, `PositiveZ`, `NegativeZ`.
+
+---
+
+## SurfaceFormat Enum
+
+Specifies the pixel encoding used when creating a texture or render target.
+
+| Value | Description |
+|---|---|
+| `Color` | 32-bit RGBA (8 bits per channel). The default. |
+| `Bgr565` | 16-bit packed BGR (5-6-5). No alpha. |
+| `Bgra5551` | 16-bit packed BGRA (5-5-5-1). 1-bit alpha. |
+| `Bgra4444` | 16-bit packed BGRA (4-4-4-4). |
+| `Dxt1` | Block-compressed: 4bpp RGB, 1-bit alpha. Requires power-of-two dimensions. |
+| `Dxt3` | Block-compressed: 8bpp RGBA, explicit 4-bit alpha. |
+| `Dxt5` | Block-compressed: 8bpp RGBA, interpolated alpha. Best for smooth alpha gradients. |
+| `NormalizedByte2` | 2-channel signed byte normalized `[−1, 1]`. Used for compressed normals. |
+| `NormalizedByte4` | 4-channel signed byte normalized. |
+| `Rgba1010102` | 10 bits per RGB channel + 2-bit alpha. |
+| `Rg32` | Two 16-bit unsigned channels. |
+| `Rgba64` | Four 16-bit unsigned channels. |
+| `Alpha8` | Single 8-bit alpha channel. |
+| `Single` | Single 32-bit float. Depth textures, height maps. |
+| `Vector2` | Two 32-bit floats. |
+| `Vector4` | Four 32-bit floats. HDR render targets. |
+| `HalfSingle` | Single 16-bit half-float. |
+| `HalfVector2` | Two 16-bit half-floats. |
+| `HalfVector4` | Four 16-bit half-floats. HDR with reduced memory. |
+
+<Note>
+Block-compressed formats (`Dxt1`, `Dxt3`, `Dxt5`) require dimensions that are multiples of 4 and are not supported on all platforms (notably some OpenGL ES mobile targets). Use the content pipeline to produce platform-appropriate compressed textures.
+</Note>
+
+---
+
+## RenderTarget2D
+
+`RenderTarget2D` extends `Texture2D` to serve as an off-screen render destination. After drawing to it, it can be sampled as a texture.
+
+### Constructor
+
+```csharp
+public RenderTarget2D(GraphicsDevice graphicsDevice, int width, int height)
+
+public RenderTarget2D(GraphicsDevice graphicsDevice, int width, int height,
+                       bool mipMap, SurfaceFormat preferredFormat,
+                       DepthFormat preferredDepthFormat)
+
+public RenderTarget2D(GraphicsDevice graphicsDevice, int width, int height,
+                       bool mipMap, SurfaceFormat preferredFormat,
+                       DepthFormat preferredDepthFormat, int multiSampleCount,
+                       RenderTargetUsage usage)
+```
+
+| Parameter | Description |
+|---|---|
+| `preferredDepthFormat` | Depth/stencil format attached to this render target. `DepthFormat.None` if no depth buffer needed. |
+| `multiSampleCount` | MSAA sample count (0 or 1 = no MSAA). |
+| `usage` | `RenderTargetUsage.DiscardContents` (default, fast) or `PreserveContents`. |
+
+### Additional Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `DepthStencilFormat` | `DepthFormat` | The depth format this render target was created with. |
+| `MultiSampleCount` | `int` | The actual MSAA sample count (clamped to device maximum). |
+| `RenderTargetUsage` | `RenderTargetUsage` | Whether contents are discarded or preserved when bound. |
+
+```csharp
+// Off-screen shadow map
+var shadowMap = new RenderTarget2D(GraphicsDevice, 2048, 2048,
+    false, SurfaceFormat.Single, DepthFormat.Depth24);
+
+GraphicsDevice.SetRenderTarget(shadowMap);
+GraphicsDevice.Clear(Color.White);
+// render scene from light's POV...
+GraphicsDevice.SetRenderTarget(null);
+
+// Use as texture in lighting pass
+effect.Parameters["ShadowMap"].SetValue(shadowMap);
+```
+
+---
+
+## RenderTargetCube
+
+`RenderTargetCube` extends `TextureCube` for rendering to individual cube faces.
+
+### Constructor
+
+```csharp
+public RenderTargetCube(GraphicsDevice graphicsDevice, int size,
+                         bool mipMap, SurfaceFormat preferredFormat,
+                         DepthFormat preferredDepthFormat)
+
+public RenderTargetCube(GraphicsDevice graphicsDevice, int size,
+                         bool mipMap, SurfaceFormat preferredFormat,
+                         DepthFormat preferredDepthFormat, int multiSampleCount,
+                         RenderTargetUsage usage)
+```
+
+Bind a specific face for rendering via:
+
+```csharp
+GraphicsDevice.SetRenderTarget(renderTargetCube, CubeMapFace.PositiveX);
+```

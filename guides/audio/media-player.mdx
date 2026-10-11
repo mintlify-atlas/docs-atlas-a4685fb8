@@ -1,0 +1,555 @@
+---
+title: "Music and Video Playback with MediaPlayer in MonoGame"
+sidebarTitle: "Media Player"
+description: "Play background music using MediaPlayer and Song in MonoGame. Learn volume, looping, playlist management, and video playback with VideoPlayer."
+---
+
+MonoGame provides two separate systems for streaming long-form audio and video: the static `MediaPlayer` class handles background music through `Song` objects, while `VideoPlayer` handles video files. Unlike `SoundEffect` — which keeps audio fully in memory — these APIs stream content from disk, making them suitable for full-length music tracks and video cutscenes. Both expose familiar play/pause/stop controls and integrate with the Content Pipeline.
+
+## Loading Songs
+
+Load a `Song` asset through the Content Pipeline the same way you load textures or sounds:
+
+```csharp
+private Song _themeMusic;
+private Song _battleMusic;
+
+protected override void LoadContent()
+{
+    _themeMusic  = Content.Load<Song>("Music/theme");
+    _battleMusic = Content.Load<Song>("Music/battle");
+}
+```
+
+You can also create a `Song` from a URI at runtime, which is useful for loading user-provided music files:
+
+```csharp
+Song userSong = Song.FromUri("My Track", new Uri("file:///music/track.ogg"));
+```
+
+`Song` exposes a few metadata properties when available:
+
+```csharp
+TimeSpan length = _themeMusic.Duration; // total playback length
+string   name   = _themeMusic.Name;     // asset name
+```
+
+<Note>
+Supported audio formats depend on the target platform. MP3 and OGG Vorbis are the most broadly supported. WAV works for most desktop platforms. Always test on each target platform.
+</Note>
+
+---
+
+## Playing Music
+
+`MediaPlayer` is a **static** class — there is no instance to create or dispose.
+
+### Basic Playback
+
+```csharp
+// Start playing a song from the beginning
+MediaPlayer.Play(_themeMusic);
+
+// Play starting at a specific position
+MediaPlayer.Play(_themeMusic, TimeSpan.FromSeconds(30));
+```
+
+`Play` clears the current queue, enqueues the song, and begins playback immediately. If a song is already playing, it stops first.
+
+### Pause, Resume, Stop
+
+```csharp
+// Pause — preserves playback position
+MediaPlayer.Pause();
+
+// Resume from the paused position
+MediaPlayer.Resume();
+
+// Stop and reset to the beginning
+MediaPlayer.Stop();
+```
+
+### Volume and Mute
+
+```csharp
+// Volume ranges from 0.0 (silence) to 1.0 (full volume)
+MediaPlayer.Volume = 0.75f;
+
+// Mute without changing Volume
+MediaPlayer.IsMuted = true;
+MediaPlayer.IsMuted = false;
+```
+
+<Tip>
+Volume adjustments use a **decibel scale** internally, not a linear scale. Setting `Volume = 0.5f` does not halve the perceived loudness — it subtracts roughly 6 dB. Use this to your advantage when implementing smooth fades.
+</Tip>
+
+### Looping
+
+```csharp
+// Loop the current song (or queue) indefinitely
+MediaPlayer.IsRepeating = true;
+
+// Play through the queue once then stop
+MediaPlayer.IsRepeating = false;
+```
+
+### Playback Position
+
+```csharp
+// Current position within the playing song
+TimeSpan position = MediaPlayer.PlayPosition;
+
+// On Android and iOS you can also seek:
+// MediaPlayer.PlayPosition = TimeSpan.FromSeconds(60);
+```
+
+### Checking State
+
+`MediaPlayer.State` returns a `MediaState` enum value:
+
+```csharp
+switch (MediaPlayer.State)
+{
+    case MediaState.Playing:
+        // Song is actively playing
+        break;
+    case MediaState.Paused:
+        // Paused; can call Resume()
+        break;
+    case MediaState.Stopped:
+        // Not playing; can call Play()
+        break;
+}
+```
+
+### Game Control vs. System Media
+
+On mobile platforms, the OS media player may be active. Check `GameHasControl` before attempting playback:
+
+```csharp
+if (MediaPlayer.GameHasControl)
+    MediaPlayer.Play(_themeMusic);
+else
+{
+    // A user's music is playing; respect it
+    // Optionally show a prompt to "use game music?"
+}
+```
+
+---
+
+## Events
+
+`MediaPlayer` exposes two static events for reacting to state changes:
+
+```csharp
+protected override void Initialize()
+{
+    // Fires when State changes (Playing → Paused, etc.)
+    MediaPlayer.MediaStateChanged += OnMediaStateChanged;
+
+    // Fires when the active song changes (queue advances, or Play() called)
+    MediaPlayer.ActiveSongChanged += OnActiveSongChanged;
+
+    base.Initialize();
+}
+
+private void OnMediaStateChanged(object sender, EventArgs e)
+{
+    if (MediaPlayer.State == MediaState.Stopped)
+        OnMusicFinished();
+}
+
+private void OnActiveSongChanged(object sender, EventArgs e)
+{
+    Song current = MediaPlayer.Queue.ActiveSong;
+    if (current != null)
+        UpdateNowPlayingUI(current.Name);
+}
+```
+
+---
+
+## Queue and Playlist Management
+
+`MediaPlayer.Queue` is a `MediaQueue` that holds the list of songs to play. You can populate it by passing a `SongCollection` to `Play`:
+
+```csharp
+// Build a collection manually (SongCollection can be iterated)
+// MediaPlayer.Play accepts a SongCollection + start index
+MediaPlayer.Play(mySongCollection, index: 0);
+```
+
+Queue properties:
+
+```csharp
+MediaQueue queue = MediaPlayer.Queue;
+
+Song activeSong = queue.ActiveSong; // currently playing song
+int  count      = queue.Count;      // number of songs in queue
+```
+
+Navigate through the queue:
+
+```csharp
+MediaPlayer.MoveNext();     // advance to next song
+MediaPlayer.MovePrevious(); // go back to previous song
+```
+
+Shuffle the queue:
+
+```csharp
+MediaPlayer.IsShuffled = true;  // random order
+MediaPlayer.IsShuffled = false; // sequential order
+```
+
+---
+
+## Video Playback with `VideoPlayer`
+
+`VideoPlayer` handles video files loaded from the Content Pipeline. After playback starts, call `GetTexture()` each frame to retrieve the current frame as a `Texture2D` and draw it to the screen.
+
+### Loading a Video
+
+```csharp
+private Video       _introVideo;
+private VideoPlayer _videoPlayer;
+private Texture2D   _videoFrame;
+
+protected override void LoadContent()
+{
+    _introVideo  = Content.Load<Video>("Videos/intro");
+    _videoPlayer = new VideoPlayer();
+}
+```
+
+A `Video` asset exposes its dimensions and duration:
+
+```csharp
+int      width    = _introVideo.Width;
+int      height   = _introVideo.Height;
+TimeSpan duration = _introVideo.Duration;
+```
+
+### Starting and Controlling Playback
+
+```csharp
+// Play from the beginning
+_videoPlayer.Play(_introVideo);
+
+// Loop the video
+_videoPlayer.IsLooped = true;
+
+// Set volume (0.0 – 1.0)
+_videoPlayer.Volume = 0.8f;
+
+// Pause and resume
+_videoPlayer.Pause();
+_videoPlayer.Resume();
+
+// Stop
+_videoPlayer.Stop();
+
+// Check state
+MediaState videoState = _videoPlayer.State;
+```
+
+### Rendering Each Frame
+
+Call `VideoPlayer.GetTexture()` inside `Draw` to get the current video frame as a `Texture2D`:
+
+```csharp
+protected override void Draw(GameTime gameTime)
+{
+    GraphicsDevice.Clear(Color.Black);
+
+    if (_videoPlayer.State != MediaState.Stopped)
+    {
+        _videoFrame = _videoPlayer.GetTexture();
+
+        if (_videoFrame != null)
+        {
+            _spriteBatch.Begin();
+            _spriteBatch.Draw(
+                _videoFrame,
+                new Rectangle(0, 0,
+                    GraphicsDevice.Viewport.Width,
+                    GraphicsDevice.Viewport.Height),
+                Color.White);
+            _spriteBatch.End();
+        }
+    }
+
+    base.Draw(gameTime);
+}
+```
+
+### Disposing `VideoPlayer`
+
+`VideoPlayer` implements `IDisposable`. Dispose it when you're done:
+
+```csharp
+protected override void UnloadContent()
+{
+    _videoPlayer?.Dispose();
+}
+```
+
+<Warning>
+`VideoPlayer` support is platform-dependent. It is fully supported on Windows (DirectX) and DesktopGL, with limited or no support on some mobile platforms. Check the platform notes in the MonoGame documentation before shipping video content.
+</Warning>
+
+---
+
+## Full Example: Music System in a Game Class
+
+The following shows a complete music manager pattern with crossfade between tracks, state-change handling, and platform safety:
+
+```csharp
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Media;
+using System;
+
+public class MusicDemoGame : Game
+{
+    private Song _menuTheme;
+    private Song _gameTheme;
+    private Song _bossTheme;
+
+    // Fade state
+    private float _targetVolume = 0.8f;
+    private float _fadeSpeed    = 0.5f; // volume units per second
+    private bool  _fading       = false;
+    private Song  _pendingSong  = null;
+
+    protected override void LoadContent()
+    {
+        _menuTheme = Content.Load<Song>("Music/menu");
+        _gameTheme = Content.Load<Song>("Music/gameplay");
+        _bossTheme = Content.Load<Song>("Music/boss");
+
+        // React to song finishing
+        MediaPlayer.MediaStateChanged += OnMediaStateChanged;
+    }
+
+    /// <summary>Start a new song with a fade-out of the current one.</summary>
+    public void TransitionTo(Song newSong, bool loop = true)
+    {
+        if (newSong == MediaPlayer.Queue.ActiveSong) return;
+
+        _pendingSong  = newSong;
+        _fading       = true;
+
+        // If nothing is playing, start immediately
+        if (MediaPlayer.State == MediaState.Stopped)
+        {
+            CommitSongTransition(loop);
+        }
+        // Otherwise let Update() fade out first
+    }
+
+    protected override void Update(GameTime gameTime)
+    {
+        float dt = (float)gameTime.ElapsedGameTime.TotalSeconds;
+
+        if (_fading)
+        {
+            // Fade out current track
+            MediaPlayer.Volume = Math.Max(
+                MediaPlayer.Volume - _fadeSpeed * dt, 0f);
+
+            if (MediaPlayer.Volume <= 0f)
+            {
+                CommitSongTransition(isRepeating: true);
+                _fading = false;
+            }
+        }
+        else if (MediaPlayer.Volume < _targetVolume &&
+                 MediaPlayer.State == MediaState.Playing)
+        {
+            // Fade in new track
+            MediaPlayer.Volume = Math.Min(
+                MediaPlayer.Volume + _fadeSpeed * dt, _targetVolume);
+        }
+
+        base.Update(gameTime);
+    }
+
+    private void CommitSongTransition(bool isRepeating)
+    {
+        if (_pendingSong == null) return;
+
+        MediaPlayer.IsRepeating = isRepeating;
+        MediaPlayer.Volume      = 0f;       // start silent for fade-in
+        MediaPlayer.Play(_pendingSong);
+        _pendingSong = null;
+    }
+
+    private void OnMediaStateChanged(object sender, EventArgs e)
+    {
+        if (MediaPlayer.State == MediaState.Stopped && !_fading)
+        {
+            // Song ended naturally (IsRepeating = false)
+            OnTrackFinished();
+        }
+    }
+
+    private void OnTrackFinished()
+    {
+        // Could auto-advance to next track, show end screen, etc.
+    }
+
+    // --- Public API for game states ---
+    public void PlayMenuMusic()   => TransitionTo(_menuTheme);
+    public void PlayGameMusic()   => TransitionTo(_gameTheme);
+    public void PlayBossMusic()   => TransitionTo(_bossTheme, loop: true);
+    public void StopMusic()       => MediaPlayer.Stop();
+    public void PauseMusic()      => MediaPlayer.Pause();
+    public void ResumeMusic()     => MediaPlayer.Resume();
+
+    protected override void UnloadContent()
+    {
+        MediaPlayer.MediaStateChanged -= OnMediaStateChanged;
+        MediaPlayer.Stop();
+
+        _menuTheme?.Dispose();
+        _gameTheme?.Dispose();
+        _bossTheme?.Dispose();
+    }
+}
+```
+
+## Full Example: Video Intro Cutscene
+
+This shows a standard intro cutscene that transitions to the main menu when the video ends:
+
+```csharp
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+using Microsoft.Xna.Framework.Media;
+using Microsoft.Xna.Framework.Input;
+
+public class IntroCutsceneState
+{
+    private Video       _video;
+    private VideoPlayer _player;
+    private Texture2D   _currentFrame;
+    private SpriteBatch _spriteBatch;
+    private GraphicsDevice _gfx;
+
+    private bool _skipRequested = false;
+
+    public bool IsFinished =>
+        _player.State == MediaState.Stopped || _skipRequested;
+
+    public void Load(GraphicsDevice gfx, SpriteBatch batch)
+    {
+        _gfx         = gfx;
+        _spriteBatch = batch;
+        // Note: content loading omitted for brevity; assume video is pre-loaded
+    }
+
+    public void Begin(Video video)
+    {
+        _video  = video;
+        _player = new VideoPlayer
+        {
+            Volume   = 1.0f,
+            IsLooped = false
+        };
+        _player.Play(_video);
+    }
+
+    public void Update(KeyboardState keys, GamePadState pad)
+    {
+        // Allow player to skip with Space or A button
+        if (keys.IsKeyDown(Keys.Space) ||
+            pad.IsButtonDown(Buttons.A) ||
+            pad.IsButtonDown(Buttons.Start))
+        {
+            _skipRequested = true;
+            _player.Stop();
+        }
+    }
+
+    public void Draw()
+    {
+        _gfx.Clear(Color.Black);
+
+        if (_player.State != MediaState.Stopped)
+        {
+            _currentFrame = _player.GetTexture();
+
+            if (_currentFrame != null)
+            {
+                // Letterbox: scale to fit while preserving aspect ratio
+                float videoAspect = (float)_video.Width / _video.Height;
+                float screenAspect = (float)_gfx.Viewport.Width / _gfx.Viewport.Height;
+
+                Rectangle dest;
+                if (videoAspect > screenAspect)
+                {
+                    int w = _gfx.Viewport.Width;
+                    int h = (int)(w / videoAspect);
+                    dest  = new Rectangle(0, (_gfx.Viewport.Height - h) / 2, w, h);
+                }
+                else
+                {
+                    int h = _gfx.Viewport.Height;
+                    int w = (int)(h * videoAspect);
+                    dest  = new Rectangle((_gfx.Viewport.Width - w) / 2, 0, w, h);
+                }
+
+                _spriteBatch.Begin();
+                _spriteBatch.Draw(_currentFrame, dest, Color.White);
+                _spriteBatch.End();
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        _player?.Dispose();
+    }
+}
+```
+
+---
+
+## Quick Reference
+
+<CardGroup cols={2}>
+  <Card title="MediaPlayer">
+    `MediaPlayer.Play(Song)` — start music  
+    `.Pause()` / `.Resume()` / `.Stop()`  
+    `.Volume` (0–1) / `.IsMuted`  
+    `.IsRepeating` / `.IsShuffled`  
+    `.State` → `MediaState`  
+    `.PlayPosition` — `TimeSpan`  
+    `.GameHasControl` — platform media check
+  </Card>
+  <Card title="Queue & Navigation">
+    `MediaPlayer.Queue.ActiveSong` — playing now  
+    `MediaPlayer.Queue.Count` — queue size  
+    `MediaPlayer.MoveNext()` — advance  
+    `MediaPlayer.MovePrevious()` — go back  
+    `MediaPlayer.ActiveSongChanged` event  
+    `MediaPlayer.MediaStateChanged` event
+  </Card>
+  <Card title="Song">
+    `Content.Load<Song>("path")` — load asset  
+    `Song.FromUri(name, uri)` — runtime path  
+    `.Duration` — `TimeSpan`  
+    `.Name` — asset name  
+    `.Dispose()` — release resources
+  </Card>
+  <Card title="VideoPlayer">
+    `new VideoPlayer()` — create instance  
+    `.Play(Video)` / `.Pause()` / `.Stop()`  
+    `.GetTexture()` → `Texture2D` current frame  
+    `.IsLooped` / `.Volume` / `.State`  
+    `Content.Load<Video>("path")` — load video  
+    `.Dispose()` — always dispose
+  </Card>
+</CardGroup>

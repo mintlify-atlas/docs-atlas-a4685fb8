@@ -1,0 +1,342 @@
+---
+title: "SpriteBatch API Reference"
+sidebarTitle: "SpriteBatch"
+description: "Complete API reference for MonoGame's SpriteBatch class — Begin, Draw, DrawString, and End methods with all overloads and parameter descriptions."
+---
+
+`SpriteBatch` is MonoGame's high-level 2D rendering class. It accumulates sprite draw calls between `Begin` and `End`, then submits them to the GPU in one or more optimised draw calls. It inherits from `GraphicsResource` and is the primary tool for 2D games, HUDs, and UI.
+
+```csharp
+// Typical per-frame usage
+_spriteBatch.Begin();
+_spriteBatch.Draw(texture, position, Color.White);
+_spriteBatch.DrawString(font, "Hello World!", new Vector2(10, 10), Color.Yellow);
+_spriteBatch.End();
+```
+
+## Namespace
+
+```
+Microsoft.Xna.Framework.Graphics
+```
+
+## Inheritance
+
+`SpriteBatch → GraphicsResource → IDisposable`
+
+---
+
+## Constructors
+
+<ParamField path="graphicsDevice" type="GraphicsDevice" required>
+  The `GraphicsDevice` used for rendering. Throws `ArgumentNullException` if `null`.
+</ParamField>
+
+```csharp
+public SpriteBatch(GraphicsDevice graphicsDevice)
+```
+
+Creates a `SpriteBatch` with a default internal batch capacity.
+
+---
+
+<ParamField path="graphicsDevice" type="GraphicsDevice" required>
+  The `GraphicsDevice` used for rendering.
+</ParamField>
+<ParamField path="capacity" type="int">
+  Initial capacity of the internal sprite item array. The value is rounded up to the nearest multiple of 64. Use a larger value if you expect to draw thousands of sprites per batch to reduce reallocations.
+</ParamField>
+
+```csharp
+public SpriteBatch(GraphicsDevice graphicsDevice, int capacity)
+```
+
+---
+
+## Begin
+
+Begins a new sprite batch. Must be called before any `Draw` or `DrawString` calls. Throws `InvalidOperationException` if called again before `End`.
+
+```csharp
+public void Begin(
+    SpriteSortMode    sortMode        = SpriteSortMode.Deferred,
+    BlendState        blendState      = null,
+    SamplerState      samplerState    = null,
+    DepthStencilState depthStencilState = null,
+    RasterizerState   rasterizerState = null,
+    Effect            effect          = null,
+    Matrix?           transformMatrix = null
+)
+```
+
+<ParamField path="sortMode" type="SpriteSortMode">
+  Controls when and how sprites are sorted and submitted. Default: `SpriteSortMode.Deferred`.
+</ParamField>
+
+<ParamField path="blendState" type="BlendState">
+  Controls alpha blending. `null` uses `BlendState.AlphaBlend` (standard premultiplied alpha). Common values: `BlendState.AlphaBlend`, `BlendState.Additive`, `BlendState.Opaque`, `BlendState.NonPremultiplied`.
+</ParamField>
+
+<ParamField path="samplerState" type="SamplerState">
+  Controls texture filtering and wrapping. `null` uses `SamplerState.LinearClamp` (bilinear, clamp-to-edge).
+</ParamField>
+
+<ParamField path="depthStencilState" type="DepthStencilState">
+  Depth and stencil buffer behaviour. `null` uses `DepthStencilState.None` (no depth test — correct for 2D). Use `DepthStencilState.Default` if mixing 2D and 3D.
+</ParamField>
+
+<ParamField path="rasterizerState" type="RasterizerState">
+  Rasterizer settings. `null` uses `RasterizerState.CullCounterClockwise`. Set `ScissorTestEnable = true` on a custom state to enable scissor clipping.
+</ParamField>
+
+<ParamField path="effect" type="Effect">
+  A custom `Effect` to use instead of the built-in sprite shader. `null` uses the default sprite shader. Common use: apply a custom pixel shader (e.g., grayscale, bloom).
+</ParamField>
+
+<ParamField path="transformMatrix" type="Matrix?">
+  An optional transformation matrix applied to all sprites in this batch (camera/zoom/pan). `null` uses `Matrix.Identity`. Applied to the sprite geometry before projection.
+</ParamField>
+
+---
+
+## End
+
+```csharp
+public void End()
+```
+
+Flushes all pending sprites to the GPU and renders them. Throws `InvalidOperationException` if called before `Begin`. After `End`, the graphics device state is left in whatever state the sprite shader configured; reset states if you intend to switch to 3D rendering.
+
+<Note>
+In `SpriteSortMode.Immediate` mode, each `Draw` call submits to the GPU immediately — `End` does nothing additional in that mode.
+</Note>
+
+---
+
+## Draw Overloads
+
+All `Draw` overloads require `Begin` to have been called first, and the `texture` argument to be non-`null`.
+
+### Full-featured overload (Vector2 position, Vector2 scale)
+
+```csharp
+public void Draw(
+    Texture2D     texture,
+    Vector2       position,
+    Rectangle?    sourceRectangle,
+    Color         color,
+    float         rotation,
+    Vector2       origin,
+    Vector2       scale,
+    SpriteEffects effects,
+    float         layerDepth)
+```
+
+### Full-featured overload (Vector2 position, float scale)
+
+```csharp
+public void Draw(
+    Texture2D     texture,
+    Vector2       position,
+    Rectangle?    sourceRectangle,
+    Color         color,
+    float         rotation,
+    Vector2       origin,
+    float         scale,
+    SpriteEffects effects,
+    float         layerDepth)
+```
+
+### Full-featured overload (destination Rectangle)
+
+```csharp
+public void Draw(
+    Texture2D     texture,
+    Rectangle     destinationRectangle,
+    Rectangle?    sourceRectangle,
+    Color         color,
+    float         rotation,
+    Vector2       origin,
+    SpriteEffects effects,
+    float         layerDepth)
+```
+
+### Simplified overloads
+
+```csharp
+// Position + source rectangle + color tint
+public void Draw(Texture2D texture, Vector2 position, Rectangle? sourceRectangle, Color color)
+
+// Destination rectangle + source rectangle + color tint
+public void Draw(Texture2D texture, Rectangle destinationRectangle, Rectangle? sourceRectangle, Color color)
+
+// Position + color tint (full texture, no rotation)
+public void Draw(Texture2D texture, Vector2 position, Color color)
+
+// Destination rectangle + color tint (stretch/squash texture)
+public void Draw(Texture2D texture, Rectangle destinationRectangle, Color color)
+```
+
+### Draw Parameter Reference
+
+| Parameter | Type | Description |
+|---|---|---|
+| `texture` | `Texture2D` | The texture to draw. Required, non-null. |
+| `position` | `Vector2` | Screen-space position of the sprite origin. |
+| `destinationRectangle` | `Rectangle` | The on-screen rectangle the texture is drawn into (stretches/squashes the sprite). |
+| `sourceRectangle` | `Rectangle?` | Sub-region of the texture to draw. `null` draws the entire texture. |
+| `color` | `Color` | Tint color multiplied with each texel. Use `Color.White` for no tint. |
+| `rotation` | `float` | Rotation in radians, clockwise. `0` = no rotation. |
+| `origin` | `Vector2` | The pivot point for rotation and position, in texture-space pixels. `Vector2.Zero` = top-left. Use `new Vector2(width/2, height/2)` for centre rotation. |
+| `scale` | `Vector2` or `float` | Scale factor. `1f` = original size. |
+| `effects` | `SpriteEffects` | Mirror flags. Can be combined: `FlipHorizontally | FlipVertically`. |
+| `layerDepth` | `float` | Depth value in `[0, 1]` used when sorting by `BackToFront` or `FrontToBack`. Ignored for `Deferred`, `Immediate`, and `Texture` modes. |
+
+---
+
+## DrawString Overloads
+
+Draws a string of text sprites using a `SpriteFont`.
+
+### Simple overloads
+
+```csharp
+public void DrawString(SpriteFont spriteFont, string text, Vector2 position, Color color)
+public void DrawString(SpriteFont spriteFont, StringBuilder text, Vector2 position, Color color)
+```
+
+### Full overloads (string)
+
+```csharp
+public void DrawString(
+    SpriteFont    spriteFont,
+    string        text,
+    Vector2       position,
+    Color         color,
+    float         rotation,
+    Vector2       origin,
+    float         scale,
+    SpriteEffects effects,
+    float         layerDepth)
+
+public void DrawString(
+    SpriteFont    spriteFont,
+    string        text,
+    Vector2       position,
+    Color         color,
+    float         rotation,
+    Vector2       origin,
+    Vector2       scale,
+    SpriteEffects effects,
+    float         layerDepth)
+
+// RTL (right-to-left) support
+public void DrawString(
+    SpriteFont    spriteFont,
+    string        text,
+    Vector2       position,
+    Color         color,
+    float         rotation,
+    Vector2       origin,
+    Vector2       scale,
+    SpriteEffects effects,
+    float         layerDepth,
+    bool          rtl)
+```
+
+### Full overloads (StringBuilder)
+
+Identical signatures to the `string` overloads above but accept `System.Text.StringBuilder` to avoid string allocations in hot paths.
+
+```csharp
+public void DrawString(SpriteFont spriteFont, StringBuilder text, Vector2 position, Color color,
+    float rotation, Vector2 origin, Vector2 scale, SpriteEffects effects, float layerDepth)
+
+public void DrawString(SpriteFont spriteFont, StringBuilder text, Vector2 position, Color color,
+    float rotation, Vector2 origin, Vector2 scale, SpriteEffects effects, float layerDepth, bool rtl)
+```
+
+---
+
+## SpriteSortMode Enum
+
+Controls when and how sprites are sorted before submission to the GPU.
+
+| Value | Description |
+|---|---|
+| `Deferred` | **(Default)** Sprites are buffered and submitted all at once in `End`, in the order they were drawn. Depth (`layerDepth`) is ignored. Most efficient for most games. |
+| `Immediate` | Each `Draw` call submits to the GPU immediately (no batching). Depth is ignored. Necessary when changing render state between individual sprites. |
+| `Texture` | Like `Deferred`, but sprites are sorted by texture object before submission, minimising texture-switch overhead. Depth is ignored. |
+| `BackToFront` | Sprites are sorted in descending `layerDepth` order (higher depth = drawn first, appears behind). Uses an unstable sort. |
+| `FrontToBack` | Sprites are sorted in ascending `layerDepth` order (lower depth = drawn first, appears behind). Uses an unstable sort. |
+
+```csharp
+// Painter's algorithm for HUD layers
+_spriteBatch.Begin(SpriteSortMode.BackToFront);
+_spriteBatch.Draw(background,  pos, null, Color.White, 0, Vector2.Zero, 1f, SpriteEffects.None, 1.0f);
+_spriteBatch.Draw(foreground,  pos, null, Color.White, 0, Vector2.Zero, 1f, SpriteEffects.None, 0.5f);
+_spriteBatch.Draw(cursor,      pos, null, Color.White, 0, Vector2.Zero, 1f, SpriteEffects.None, 0.0f);
+_spriteBatch.End();
+```
+
+---
+
+## SpriteEffects Enum
+
+A `[Flags]` enum that controls texture mirroring.
+
+| Value | Description |
+|---|---|
+| `None` | No mirroring. |
+| `FlipHorizontally` | Mirrors the sprite along the X axis (left ↔ right). |
+| `FlipVertically` | Mirrors the sprite along the Y axis (top ↔ bottom). |
+
+Values can be combined with bitwise OR:
+
+```csharp
+var effects = SpriteEffects.FlipHorizontally | SpriteEffects.FlipVertically;
+```
+
+---
+
+## Common Patterns
+
+### Camera/Zoom
+
+```csharp
+var camera = Matrix.CreateTranslation(-cameraX, -cameraY, 0)
+           * Matrix.CreateScale(zoom);
+
+_spriteBatch.Begin(transformMatrix: camera);
+// draw world...
+_spriteBatch.End();
+
+// Draw HUD without camera transform
+_spriteBatch.Begin();
+// draw UI...
+_spriteBatch.End();
+```
+
+### Custom Pixel Shader
+
+```csharp
+Effect grayscale = Content.Load<Effect>("Shaders/Grayscale");
+_spriteBatch.Begin(effect: grayscale);
+_spriteBatch.Draw(texture, position, Color.White);
+_spriteBatch.End();
+```
+
+### Scissor Rectangle (clip region)
+
+```csharp
+var scissorState = new RasterizerState { ScissorTestEnable = true };
+
+GraphicsDevice.ScissorRectangle = new Rectangle(100, 100, 300, 200);
+_spriteBatch.Begin(rasterizerState: scissorState);
+// only pixels inside the scissor rectangle are drawn
+_spriteBatch.End();
+```
+
+<Warning>
+Calling `Begin` while another `Begin`/`End` pair is open on the same `SpriteBatch` throws `InvalidOperationException`. Use multiple `SpriteBatch` instances if you need concurrent batches, or nest `End`/`Begin` pairs.
+</Warning>

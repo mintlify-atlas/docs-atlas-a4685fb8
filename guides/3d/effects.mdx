@@ -1,0 +1,409 @@
+---
+title: "Built-in Effects and Custom Shaders in MonoGame"
+sidebarTitle: "Effects"
+description: "MonoGame ships BasicEffect, SkinnedEffect, EnvironmentMapEffect, and more. Learn to configure built-in effects and load custom HLSL shaders compiled with mgfxc."
+---
+
+Every pixel drawn in a 3D MonoGame scene passes through an `Effect` — a compiled GPU program consisting of one or more techniques, each containing one or more passes. MonoGame ships five built-in effects that cover the most common use cases without requiring you to write a single line of HLSL. When you need full control you can compile custom shaders with the `mgfxc` tool and load them through the Content Pipeline exactly like any other asset.
+
+## The Effect Base Class
+
+All effects inherit from `Effect` (in `Microsoft.Xna.Framework.Graphics`). The three properties you interact with most are:
+
+| Member | Type | Description |
+|---|---|---|
+| `Parameters` | `EffectParameterCollection` | Named parameters exposed by the shader (matrices, floats, textures, etc.). |
+| `Techniques` | `EffectTechniqueCollection` | All compiled technique variants in the effect. |
+| `CurrentTechnique` | `EffectTechnique` | The technique that will be used on the next draw call. |
+
+Applying a pass uploads parameter data to the GPU:
+
+```csharp
+effect.CurrentTechnique.Passes[0].Apply();
+```
+
+---
+
+## BasicEffect
+
+`BasicEffect` is the workhorse of MonoGame 3D rendering. It supports optional texturing, per-vertex colour, three directional lights, ambient light, fog, and transparency — all selectable at runtime without writing any shader code. It implements `IEffectMatrices`, `IEffectLights`, and `IEffectFog`.
+
+### Matrix Properties
+
+```csharp
+basicEffect.World      = worldMatrix;
+basicEffect.View       = viewMatrix;
+basicEffect.Projection = projectionMatrix;
+```
+
+### Lighting
+
+<Steps>
+  <Step title="Enable three-point lighting in one call">
+    ```csharp
+    basicEffect.EnableDefaultLighting();
+    ```
+    This sets `LightingEnabled = true` and configures `DirectionalLight0`, `DirectionalLight1`, and `DirectionalLight2` to a standard key/fill/back rig, also returning the recommended ambient colour.
+  </Step>
+  <Step title="Or configure lights manually">
+    ```csharp
+    basicEffect.LightingEnabled         = true;
+    basicEffect.AmbientLightColor       = new Vector3(0.2f, 0.2f, 0.2f);
+
+    basicEffect.DirectionalLight0.Enabled     = true;
+    basicEffect.DirectionalLight0.Direction   = Vector3.Normalize(new Vector3(1, -1, -1));
+    basicEffect.DirectionalLight0.DiffuseColor  = new Vector3(0.8f, 0.8f, 0.8f);
+    basicEffect.DirectionalLight0.SpecularColor = new Vector3(1f, 1f, 1f);
+
+    basicEffect.DirectionalLight1.Enabled     = false;
+    basicEffect.DirectionalLight2.Enabled     = false;
+    ```
+    `BasicEffect` exposes `DirectionalLight0`, `DirectionalLight1`, and `DirectionalLight2`. Each has `Direction` (Vector3), `DiffuseColor` (Vector3), `SpecularColor` (Vector3), and `Enabled` (bool).
+  </Step>
+</Steps>
+
+### Material Colours
+
+All colour values are `Vector3` in the 0–1 range:
+
+```csharp
+basicEffect.DiffuseColor   = new Vector3(0.9f, 0.5f, 0.2f); // orange
+basicEffect.EmissiveColor  = new Vector3(0.0f, 0.0f, 0.0f); // no glow
+basicEffect.SpecularColor  = new Vector3(1.0f, 1.0f, 1.0f); // white spec
+basicEffect.SpecularPower  = 32f;
+basicEffect.Alpha          = 1.0f; // fully opaque
+```
+
+### Texturing
+
+```csharp
+basicEffect.TextureEnabled = true;
+basicEffect.Texture        = Content.Load<Texture2D>("Textures/ship_diffuse");
+```
+
+Set `TextureEnabled = false` to shade with `DiffuseColor` alone.
+
+### Vertex Colours
+
+If your vertex format includes a `Color` channel:
+
+```csharp
+basicEffect.VertexColorEnabled = true;
+```
+
+### Fog
+
+```csharp
+basicEffect.FogEnabled = true;
+basicEffect.FogColor   = new Vector3(0.6f, 0.7f, 0.8f); // sky colour
+basicEffect.FogStart   = 40f;   // world units from camera
+basicEffect.FogEnd     = 200f;
+```
+
+### Full BasicEffect Example: Textured Lit Mesh
+
+```csharp
+var effect = new BasicEffect(GraphicsDevice)
+{
+    World      = Matrix.Identity,
+    View       = viewMatrix,
+    Projection = projMatrix,
+    TextureEnabled = true,
+    Texture        = shipTexture,
+};
+
+effect.EnableDefaultLighting();
+
+// Override specular for a shinier look.
+effect.SpecularColor = new Vector3(1f, 0.9f, 0.7f);
+effect.SpecularPower = 64f;
+
+foreach (EffectPass pass in effect.CurrentTechnique.Passes)
+{
+    pass.Apply();
+    GraphicsDevice.DrawIndexedPrimitives(
+        PrimitiveType.TriangleList,
+        0, 0, indexCount / 3);
+}
+```
+
+---
+
+## SkinnedEffect
+
+`SkinnedEffect` is designed for skinned (vertex-weighted) character models. It supports up to **72 bones**, full three-point lighting, fog, and a per-vertex diffuse texture. It always has lighting enabled — attempting to disable it throws `NotSupportedException`.
+
+### Setting Bone Transforms
+
+```csharp
+// boneMatrices is a Matrix[] computed from your animation system.
+skinnedEffect.SetBoneTransforms(boneMatrices);
+```
+
+The array must not exceed `SkinnedEffect.MaxBones` (72). To retrieve the current array (e.g. for debugging), call `skinnedEffect.GetBoneTransforms(count)`.
+
+### Weights Per Vertex
+
+`WeightsPerVertex` controls how many bone influences are evaluated per vertex. Valid values are **1**, **2**, or **4** (default 4):
+
+```csharp
+skinnedEffect.WeightsPerVertex = 2; // Cheaper; fine for low-poly characters.
+```
+
+### SkinnedEffect Example
+
+```csharp
+var skinned = new SkinnedEffect(GraphicsDevice);
+skinned.Texture           = characterTexture;
+skinned.World             = worldMatrix;
+skinned.View              = viewMatrix;
+skinned.Projection        = projMatrix;
+skinned.WeightsPerVertex  = 4;
+skinned.EnableDefaultLighting();
+
+// Provide the bone palette from your animation player.
+skinned.SetBoneTransforms(animationPlayer.GetSkinTransforms());
+
+foreach (ModelMesh mesh in characterModel.Meshes)
+{
+    foreach (ModelMeshPart part in mesh.MeshParts)
+        part.Effect = skinned;
+
+    mesh.Draw();
+}
+```
+
+---
+
+## EnvironmentMapEffect
+
+`EnvironmentMapEffect` renders a base diffuse texture blended with a reflection from a `TextureCube`, useful for shiny metal and glass surfaces.
+
+| Property | Type | Description |
+|---|---|---|
+| `Texture` | `Texture2D` | Base (diffuse) texture. |
+| `EnvironmentMap` | `TextureCube` | The cubemap used for reflections. |
+| `EnvironmentMapAmount` | `float` | How much of the cubemap RGB to blend (0–1, default 1). |
+| `EnvironmentMapSpecular` | `Vector3` | Specular highlight colour sourced from the cubemap alpha (default `Vector3.Zero`). |
+| `FresnelFactor` | `float` | Strength of view-angle-dependent Fresnel blending. 0 = uniform; 1 = edge-only (default 1). |
+
+```csharp
+var envEffect = new EnvironmentMapEffect(GraphicsDevice);
+envEffect.Texture             = shipDiffuse;
+envEffect.EnvironmentMap      = skyCubeMap;
+envEffect.EnvironmentMapAmount = 0.6f;
+envEffect.FresnelFactor        = 1.5f;
+envEffect.EnableDefaultLighting();
+envEffect.World      = worldMatrix;
+envEffect.View       = viewMatrix;
+envEffect.Projection = projMatrix;
+```
+
+<Note>
+  Like `SkinnedEffect`, `EnvironmentMapEffect` always requires lighting. Setting `IEffectLights.LightingEnabled = false` throws `NotSupportedException`.
+</Note>
+
+---
+
+## DualTextureEffect
+
+`DualTextureEffect` blends two textures together. It is commonly used for lightmapped geometry where one texture is the art and the second is a pre-baked lightmap.
+
+```csharp
+var dualTex = new DualTextureEffect(GraphicsDevice);
+dualTex.Texture  = albedoTexture;
+dualTex.Texture2 = lightmapTexture;
+dualTex.World      = worldMatrix;
+dualTex.View       = viewMatrix;
+dualTex.Projection = projMatrix;
+```
+
+---
+
+## AlphaTestEffect
+
+`AlphaTestEffect` discards pixels whose alpha value fails a configurable test, allowing foliage, fences, and other cutout geometry to be drawn without depth-sorting or alpha blending.
+
+```csharp
+var alphaTest = new AlphaTestEffect(GraphicsDevice);
+alphaTest.AlphaFunction  = CompareFunction.Greater;
+alphaTest.ReferenceAlpha = 128; // discard pixels with alpha ≤ 128
+alphaTest.Texture        = grassTexture;
+alphaTest.World          = worldMatrix;
+alphaTest.View           = viewMatrix;
+alphaTest.Projection     = projMatrix;
+```
+
+---
+
+## Custom Effects (HLSL + mgfxc)
+
+When the built-in effects are not sufficient, write your shader in HLSL and compile it with `mgfxc` (the MonoGame FX compiler). The compiled `.mgfx` file can be added to your MGCB project and loaded at runtime.
+
+<Steps>
+  <Step title="Write the HLSL effect file">
+    Create a `.fx` file with standard HLSL technique/pass structure:
+
+    ```hlsl
+    // MyShader.fx
+    float4x4 WorldViewProj;
+    float     GlowAmount;
+    texture   DiffuseTexture;
+
+    sampler2D DiffuseSampler = sampler_state
+    {
+        Texture = <DiffuseTexture>;
+        MinFilter = Linear;
+        MagFilter = Linear;
+    };
+
+    struct VSOutput
+    {
+        float4 Position : SV_Position;
+        float2 TexCoord : TEXCOORD0;
+    };
+
+    VSOutput VS(float4 pos : POSITION, float2 uv : TEXCOORD0)
+    {
+        VSOutput output;
+        output.Position = mul(pos, WorldViewProj);
+        output.TexCoord = uv;
+        return output;
+    }
+
+    float4 PS(VSOutput input) : COLOR0
+    {
+        float4 color = tex2D(DiffuseSampler, input.TexCoord);
+        color.rgb *= GlowAmount;
+        return color;
+    }
+
+    technique MyTechnique
+    {
+        pass P0
+        {
+            VertexShader = compile vs_3_0 VS();
+            PixelShader  = compile ps_3_0 PS();
+        }
+    }
+    ```
+  </Step>
+  <Step title="Add to the Content Pipeline">
+    Open `Content.mgcb` in the MGCB Editor, click **Add → Existing Item**, and select the `.fx` file. Set the **Processor** to `Effect - MonoGame`. Build the content project.
+  </Step>
+  <Step title="Load the compiled effect">
+    ```csharp
+    Effect myShader;
+
+    protected override void LoadContent()
+    {
+        myShader = Content.Load<Effect>("Shaders/MyShader");
+    }
+    ```
+  </Step>
+  <Step title="Set parameters">
+    ```csharp
+    myShader.Parameters["WorldViewProj"].SetValue(world * view * projection);
+    myShader.Parameters["GlowAmount"].SetValue(2.0f);
+    myShader.Parameters["DiffuseTexture"].SetValue(diffuseTexture);
+    ```
+
+    `EffectParameter.SetValue` is overloaded for `float`, `Vector2`, `Vector3`, `Vector4`, `Matrix`, `Matrix[]`, `Texture2D`, `TextureCube`, and more.
+  </Step>
+  <Step title="Apply and draw">
+    ```csharp
+    myShader.CurrentTechnique = myShader.Techniques["MyTechnique"];
+
+    foreach (EffectPass pass in myShader.CurrentTechnique.Passes)
+    {
+        pass.Apply();
+        GraphicsDevice.DrawIndexedPrimitives(
+            PrimitiveType.TriangleList,
+            0, 0, primitiveCount);
+    }
+    ```
+  </Step>
+</Steps>
+
+### Assigning a Custom Effect to a Model Mesh
+
+You can swap out the effect on individual `ModelMeshPart` objects:
+
+```csharp
+foreach (ModelMesh mesh in shipModel.Meshes)
+{
+    foreach (ModelMeshPart part in mesh.MeshParts)
+    {
+        part.Effect = myShader;
+    }
+}
+```
+
+<Warning>
+  After swapping effects on a model's mesh parts, `Model.Draw` will throw an exception if your custom effect does not implement `IEffectMatrices`. Either implement the interface in a wrapper class, or drive the draw loop manually rather than calling `Model.Draw`.
+</Warning>
+
+### Cloning Effects
+
+If you need multiple independent instances of the same effect (e.g. one per mesh with different parameter values), use `Effect.Clone()`:
+
+```csharp
+Effect meshEffect = myShader.Clone();
+```
+
+Cloned effects share the immutable shader bytecode but have their own independent parameter state.
+
+---
+
+## Built-in Effect Quick Reference
+
+<CodeGroup>
+
+```csharp BasicEffect
+var fx = new BasicEffect(GraphicsDevice);
+fx.World            = world;
+fx.View             = view;
+fx.Projection       = proj;
+fx.EnableDefaultLighting();
+fx.TextureEnabled   = true;
+fx.Texture          = myTexture;
+fx.SpecularPower    = 32f;
+fx.FogEnabled       = true;
+fx.FogStart         = 50f;
+fx.FogEnd           = 200f;
+fx.FogColor         = new Vector3(0.5f, 0.6f, 0.7f);
+```
+
+```csharp SkinnedEffect
+var fx = new SkinnedEffect(GraphicsDevice);
+fx.World           = world;
+fx.View            = view;
+fx.Projection      = proj;
+fx.Texture         = characterTex;
+fx.WeightsPerVertex = 4;
+fx.EnableDefaultLighting();
+fx.SetBoneTransforms(boneMatrices); // Matrix[], max 72
+```
+
+```csharp EnvironmentMapEffect
+var fx = new EnvironmentMapEffect(GraphicsDevice);
+fx.World                  = world;
+fx.View                   = view;
+fx.Projection             = proj;
+fx.Texture                = diffuseTex;
+fx.EnvironmentMap         = cubemap;
+fx.EnvironmentMapAmount   = 0.8f;
+fx.FresnelFactor          = 1.0f;
+fx.EnableDefaultLighting();
+```
+
+```csharp Custom Effect
+var fx = Content.Load<Effect>("Shaders/MyShader");
+fx.Parameters["WorldViewProj"].SetValue(world * view * proj);
+fx.Parameters["MyFloat"].SetValue(3.14f);
+fx.Parameters["MyTexture"].SetValue(tex);
+fx.CurrentTechnique = fx.Techniques["Main"];
+fx.CurrentTechnique.Passes[0].Apply();
+```
+
+</CodeGroup>

@@ -1,0 +1,312 @@
+---
+title: "GameComponent and DrawableGameComponent API Reference"
+sidebarTitle: "Game Components"
+description: "API reference for GameComponent, DrawableGameComponent, GameComponentCollection, and GameServiceContainer in the Microsoft.Xna.Framework namespace."
+---
+
+MonoGame's component system lets you split a game into independent, reusable objects that participate in the standard `Update`/`Draw` loop automatically. Any class added to `Game.Components` that implements `IGameComponent` is initialized once; if it also implements `IUpdateable` it is updated every tick, and if it implements `IDrawable` it is drawn every frame in ascending `DrawOrder`.
+
+```csharp
+// Add a component to the game
+Components.Add(new MyGameComponent(this));
+```
+
+## Namespace
+
+```
+Microsoft.Xna.Framework
+```
+
+---
+
+## Interfaces
+
+### IGameComponent
+
+```csharp
+public interface IGameComponent
+{
+    void Initialize();
+}
+```
+
+Represents any object that can be attached to a `Game`.
+
+| Method | Description |
+|---|---|
+| `Initialize()` | Called by the framework once, after all components have been added and `Game.Initialize()` is running. |
+
+---
+
+### IUpdateable
+
+```csharp
+public interface IUpdateable
+{
+    bool   Enabled      { get; }
+    int    UpdateOrder  { get; }
+    void   Update(GameTime gameTime);
+    event EventHandler<EventArgs> EnabledChanged;
+    event EventHandler<EventArgs> UpdateOrderChanged;
+}
+```
+
+| Member | Type | Description |
+|---|---|---|
+| `Enabled` | `bool` | When `false` the framework skips calling `Update` on this object. |
+| `UpdateOrder` | `int` | Lower values are updated first. Components with equal `UpdateOrder` are updated in add order. |
+| `Update(GameTime)` | method | Called each game tick when `Enabled` is `true`. |
+| `EnabledChanged` | event | Raised when `Enabled` changes. |
+| `UpdateOrderChanged` | event | Raised when `UpdateOrder` changes. |
+
+---
+
+### IDrawable
+
+```csharp
+public interface IDrawable
+{
+    bool   Visible    { get; }
+    int    DrawOrder  { get; }
+    void   Draw(GameTime gameTime);
+    event EventHandler<EventArgs> VisibleChanged;
+    event EventHandler<EventArgs> DrawOrderChanged;
+}
+```
+
+| Member | Type | Description |
+|---|---|---|
+| `Visible` | `bool` | When `false` the framework skips calling `Draw` on this object. |
+| `DrawOrder` | `int` | Lower values are drawn first (behind higher-order components). |
+| `Draw(GameTime)` | method | Called each render frame when `Visible` is `true`. |
+| `VisibleChanged` | event | Raised when `Visible` changes. |
+| `DrawOrderChanged` | event | Raised when `DrawOrder` changes. |
+
+---
+
+## GameComponent
+
+`GameComponent` is the base class for non-drawable update-only components. It implements `IGameComponent`, `IUpdateable`, and `IDisposable`.
+
+### Constructor
+
+<ParamField path="game" type="Game" required>
+  The `Game` instance this component belongs to. Stored in the `Game` property.
+</ParamField>
+
+```csharp
+public GameComponent(Game game)
+```
+
+### Properties
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `Game` | `Game` | *(set by constructor)* | The owning `Game` instance. Read-only. |
+| `Enabled` | `bool` | `true` | Controls whether `Update` is called each tick. Setting this raises `EnabledChanged`. |
+| `UpdateOrder` | `int` | `0` | Determines update order relative to other components. Setting this raises `UpdateOrderChanged`. |
+
+### Methods
+
+| Method | Description |
+|---|---|
+| `Initialize()` | `virtual`. Called by the framework once. Override to perform one-time setup. |
+| `Update(GameTime gameTime)` | `virtual`. Called each tick while `Enabled` is `true`. Override to implement per-frame logic. |
+| `Dispose()` | Calls `Dispose(true)` and suppresses finalization. |
+
+### Events
+
+| Event | Type | Description |
+|---|---|---|
+| `EnabledChanged` | `EventHandler<EventArgs>` | Raised when `Enabled` changes. |
+| `UpdateOrderChanged` | `EventHandler<EventArgs>` | Raised when `UpdateOrder` changes. |
+
+### Example
+
+```csharp
+public class PlayerController : GameComponent
+{
+    public PlayerController(Game game) : base(game) { }
+
+    public override void Initialize()
+    {
+        base.Initialize();
+        // one-time setup
+    }
+
+    public override void Update(GameTime gameTime)
+    {
+        float dt = (float)gameTime.ElapsedGameTime.TotalSeconds;
+        // update player state...
+    }
+}
+```
+
+---
+
+## DrawableGameComponent
+
+`DrawableGameComponent` extends `GameComponent` with rendering capability. It additionally implements `IDrawable`.
+
+### Constructor
+
+<ParamField path="game" type="Game" required>
+  The owning `Game` instance.
+</ParamField>
+
+```csharp
+public DrawableGameComponent(Game game) : base(game)
+```
+
+### Additional Properties
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `Visible` | `bool` | `true` | When `false`, `Draw` is not called. Setting this raises `VisibleChanged`. |
+| `DrawOrder` | `int` | `0` | Draw order relative to other `IDrawable` components. Lower = drawn first. |
+| `GraphicsDevice` | `GraphicsDevice` | *(from game)* | Convenience accessor for `Game.GraphicsDevice`. Read-only. |
+
+### Additional Methods
+
+| Method | Description |
+|---|---|
+| `Draw(GameTime gameTime)` | `virtual`. Called each frame while `Visible` is `true`. Override to issue draw calls. |
+| `LoadContent()` | `protected virtual`. Called from `Initialize`. Override to load graphical resources. |
+| `UnloadContent()` | `protected virtual`. Called from `Dispose`. Override to release graphical resources. |
+
+### Events
+
+| Event | Type | Description |
+|---|---|---|
+| `VisibleChanged` | `EventHandler<EventArgs>` | Raised when `Visible` changes. |
+| `DrawOrderChanged` | `EventHandler<EventArgs>` | Raised when `DrawOrder` changes. |
+
+### Example
+
+```csharp
+public class HUD : DrawableGameComponent
+{
+    SpriteBatch _sb;
+    SpriteFont  _font;
+
+    public HUD(Game game) : base(game) { DrawOrder = 100; }
+
+    protected override void LoadContent()
+    {
+        _sb   = new SpriteBatch(GraphicsDevice);
+        _font = Game.Content.Load<SpriteFont>("Fonts/UI");
+    }
+
+    public override void Draw(GameTime gameTime)
+    {
+        _sb.Begin();
+        _sb.DrawString(_font, "Score: 0", new Vector2(10, 10), Color.White);
+        _sb.End();
+    }
+}
+```
+
+<Tip>
+Use `DrawOrder` to layer components: background at 0, world geometry at 10, UI at 100, debug overlays at 200.
+</Tip>
+
+---
+
+## GameComponentCollection
+
+`GameComponentCollection` is the strongly-typed collection exposed by `Game.Components`. It inherits from `Collection<IGameComponent>`.
+
+### Methods
+
+| Method | Signature | Description |
+|---|---|---|
+| `Add` | `void Add(IGameComponent item)` | Adds a component. Raises `ComponentAdded`. If the game is already initialized, `Initialize()` is called immediately on the new component. |
+| `Remove` | `bool Remove(IGameComponent item)` | Removes a component and raises `ComponentRemoved`. |
+
+### Events
+
+| Event | Type | Description |
+|---|---|---|
+| `ComponentAdded` | `EventHandler<GameComponentCollectionEventArgs>` | Raised when a component is added. `GameComponentCollectionEventArgs.GameComponent` holds the new component. |
+| `ComponentRemoved` | `EventHandler<GameComponentCollectionEventArgs>` | Raised when a component is removed. |
+
+```csharp
+Components.ComponentAdded += (s, e) =>
+    Console.WriteLine($"Component added: {e.GameComponent}");
+```
+
+---
+
+## GameServiceContainer
+
+`GameServiceContainer` is a lightweight IoC/service-locator exposed via `Game.Services`. It maps `Type` keys to service provider objects.
+
+### Constructor
+
+```csharp
+public GameServiceContainer()
+```
+
+Creates an empty container.
+
+### Methods
+
+<ParamField path="type" type="Type" required>
+  The interface or base type that identifies the service.
+</ParamField>
+<ParamField path="provider" type="object" required>
+  The service implementation. Must be assignable to `type`. Throws `ArgumentException` otherwise.
+</ParamField>
+
+```csharp
+public void AddService(Type type, object provider)
+```
+
+Registers a service. Throws `ArgumentNullException` if either argument is `null`, or `ArgumentException` if `provider` is not assignable to `type`.
+
+---
+
+```csharp
+public void AddService<T>(T provider)
+```
+
+Generic overload — equivalent to `AddService(typeof(T), provider)`.
+
+---
+
+```csharp
+public object GetService(Type type)
+```
+
+Returns the registered service for `type`, or `null` if none is registered.
+
+---
+
+```csharp
+public T GetService<T>() where T : class
+```
+
+Generic overload — returns the registered service cast to `T`, or `null`.
+
+---
+
+```csharp
+public void RemoveService(Type type)
+```
+
+Removes the service registered for `type`. Does nothing if no service is registered.
+
+### Example
+
+```csharp
+// Register a custom audio service
+Services.AddService<IAudioService>(new AudioManager());
+
+// Retrieve it elsewhere
+var audio = Services.GetService<IAudioService>();
+audio.PlayBGM("theme");
+```
+
+<Note>
+`GraphicsDeviceManager` automatically registers itself under both `IGraphicsDeviceManager` and `IGraphicsDeviceService` when constructed.
+</Note>

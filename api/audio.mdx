@@ -1,0 +1,334 @@
+---
+title: "Audio API Reference: SoundEffect, SoundEffectInstance, 3D Audio"
+sidebarTitle: "Audio"
+description: "API reference for MonoGame audio classes: SoundEffect, SoundEffectInstance, DynamicSoundEffectInstance, AudioEmitter, and AudioListener."
+---
+
+MonoGame's audio system lives in the `Microsoft.Xna.Framework.Audio` namespace and is built on top of platform-specific backends (OpenAL on DesktopGL, FAudio/XAudio2 on Windows, AVAudioEngine on iOS, and so on). The central class is **SoundEffect**, which holds an immutable buffer of audio data. You play it either with the fire-and-forget `Play()` method or by creating a **SoundEffectInstance** for fine-grained control over volume, pitch, looping, and 3D positioning. **DynamicSoundEffectInstance** extends this model for streaming scenarios — your code feeds raw PCM buffers in real time. Spatial audio is achieved by pairing an **AudioEmitter** (the sound source) with an **AudioListener** (the ear) and calling `Apply3D()`.
+
+<Warning>
+The audio system initializes automatically on first use, but initialization can fail on systems without audio hardware. Call `SoundEffect.Initialize()` explicitly in your `Game` constructor if you want to catch `NoAudioHardwareException` early and degrade gracefully.
+</Warning>
+
+---
+
+## SoundEffect
+
+`SoundEffect` is a sealed class that holds a PCM audio buffer and exposes fire-and-forget playback.
+**Namespace:** `Microsoft.Xna.Framework.Audio`
+
+### Constructors
+
+<ParamField body="buffer" type="byte[]">
+  Uncompressed 16-bit PCM audio data.
+</ParamField>
+<ParamField body="sampleRate" type="int">
+  Samples per second. Must be between 8,000 and 48,000 Hz.
+</ParamField>
+<ParamField body="channels" type="AudioChannels">
+  `AudioChannels.Mono` or `AudioChannels.Stereo`.
+</ParamField>
+
+```csharp
+// Minimal constructor — entire buffer is used
+var sfx = new SoundEffect(buffer, 44100, AudioChannels.Stereo);
+
+// Extended constructor with loop region
+var sfx = new SoundEffect(
+    buffer, offset, count,
+    sampleRate: 22050,
+    channels: AudioChannels.Mono,
+    loopStart: 0,
+    loopLength: 0); // 0 = loop entire sound
+```
+
+### Static Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `MasterVolume` | `float` | Global volume multiplier for all `SoundEffectInstance`s. Range `[0.0, 1.0]`. Defaults to `1.0`. |
+| `DistanceScale` | `float` | Scale applied to 3D distance attenuation. Must be `> 0`. Defaults to `1.0`. |
+| `DopplerScale` | `float` | Scale applied to Doppler shift calculations. Must be `>= 0`. Defaults to `1.0`. |
+| `SpeedOfSound` | `float` | Speed of sound in meters per second used for Doppler. Defaults to `343.5`. |
+
+### Instance Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `Duration` | `TimeSpan` | Total length of the audio buffer. |
+| `Name` | `string` | Optional asset name (set by the content pipeline). Read/write. |
+| `IsDisposed` | `bool` | `true` after `Dispose()` has been called. |
+
+### Methods
+
+| Signature | Returns | Description |
+|-----------|---------|-------------|
+| `Play()` | `bool` | Fire-and-forget playback using an internal pooled instance. Returns `false` if the platform limit is reached. |
+| `Play(float volume, float pitch, float pan)` | `bool` | Fire-and-forget with volume, pitch, and pan overrides. |
+| `CreateInstance()` | `SoundEffectInstance` | Creates a non-pooled instance for advanced control. |
+| `Dispose()` | `void` | Frees native audio resources. All instances created from this effect become invalid. |
+
+### Static Factory Methods
+
+| Signature | Returns | Description |
+|-----------|---------|-------------|
+| `SoundEffect.FromStream(Stream stream)` | `SoundEffect` | Loads a wave file from a `Stream`. The stream must contain RIFF/PCM data pointing to the beginning of the file. |
+| `SoundEffect.FromFile(string path)` | `SoundEffect` | Opens a file by path and calls `FromStream` internally. |
+| `SoundEffect.GetSampleDuration(int sizeInBytes, int sampleRate, AudioChannels channels)` | `TimeSpan` | Calculates the duration of a 16-bit PCM buffer of the given size. |
+| `SoundEffect.GetSampleSizeInBytes(TimeSpan duration, int sampleRate, AudioChannels channels)` | `int` | Calculates the byte count needed for a 16-bit PCM buffer of the given duration. |
+
+Supported WAV formats for `FromStream`/`FromFile`:
+
+- 8-bit unsigned PCM
+- 16-bit signed PCM
+- 24-bit signed PCM
+- 32-bit IEEE float PCM
+- MS-ADPCM 4-bit compressed
+- IMA/ADPCM (IMA4) 4-bit compressed
+
+### Example
+
+```csharp
+// Load from the content pipeline
+SoundEffect explosionSfx = Content.Load<SoundEffect>("Sounds/Explosion");
+
+// Fire-and-forget
+explosionSfx.Play(volume: 0.8f, pitch: 0.0f, pan: 0.0f);
+
+// Load at runtime from a WAV file
+using var stream = File.OpenRead("alert.wav");
+SoundEffect alert = SoundEffect.FromStream(stream);
+alert.Play();
+```
+
+---
+
+## SoundEffectInstance
+
+`SoundEffectInstance` gives full per-instance control over a playing sound.
+Create instances with `SoundEffect.CreateInstance()` — do not instantiate directly.
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `Volume` | `float` | Instance volume in `[0.0, 1.0]`. Multiplied by `SoundEffect.MasterVolume` at playback time. |
+| `Pitch` | `float` | Pitch adjustment. `−1.0` is an octave down, `0.0` is unchanged, `1.0` is an octave up. Desktop platforms clamp to `[−10, 10]`; mobile clamps to `[−1, 1]`. |
+| `Pan` | `float` | Speaker balance. `−1.0` = left, `0.0` = center, `1.0` = right. Must stay in `[−1, 1]`. |
+| `IsLooped` | `bool` | When `true` the sound restarts automatically at the end. Must be set before calling `Play()`. |
+| `State` | `SoundState` | Current playback state: `Stopped`, `Playing`, or `Paused`. |
+| `IsDisposed` | `bool` | `true` after `Dispose()`. |
+
+### Methods
+
+| Signature | Returns | Description |
+|-----------|---------|-------------|
+| `Play()` | `void` | Starts or resumes playback. Throws `InstancePlayLimitException` if the platform limit is exceeded. |
+| `Pause()` | `void` | Suspends playback. Call `Play()` or `Resume()` to continue. |
+| `Resume()` | `void` | Resumes a paused instance. No-op if already playing. |
+| `Stop()` | `void` | Stops playback immediately. |
+| `Stop(bool immediate)` | `void` | When `immediate` is `false`, the sound plays through its release phase (e.g., fade-out) before stopping. |
+| `Apply3D(AudioListener listener, AudioEmitter emitter)` | `void` | Applies 3D panning and Doppler to this instance based on listener/emitter positions. |
+| `Apply3D(AudioListener[] listeners, AudioEmitter emitter)` | `void` | Applies 3D audio for multiple listeners (each is processed in turn). |
+| `Dispose()` | `void` | Releases resources. |
+
+### Example
+
+```csharp
+SoundEffect musicLoop = Content.Load<SoundEffect>("Sounds/AmbientLoop");
+
+SoundEffectInstance ambient = musicLoop.CreateInstance();
+ambient.IsLooped = true;
+ambient.Volume = 0.5f;
+ambient.Play();
+
+// Later, fade out
+ambient.Volume = 0.0f;
+ambient.Stop(immediate: false);
+```
+
+---
+
+## SoundState Enum
+
+| Value | Description |
+|-------|-------------|
+| `SoundState.Stopped` | The instance is not playing. |
+| `SoundState.Playing` | Audio is actively being rendered. |
+| `SoundState.Paused` | Playback is suspended but position is retained. |
+
+---
+
+## DynamicSoundEffectInstance
+
+`DynamicSoundEffectInstance` is a specialized `SoundEffectInstance` where *your code* supplies PCM audio data in real time via `SubmitBuffer()`. Use it for procedural audio, streaming music decoders, or voice chat.
+
+### Constructor
+
+<ParamField body="sampleRate" type="int">
+  Samples per second. Valid range: 8,000–48,000 Hz.
+</ParamField>
+<ParamField body="channels" type="AudioChannels">
+  `AudioChannels.Mono` or `AudioChannels.Stereo`.
+</ParamField>
+
+```csharp
+var dynSfx = new DynamicSoundEffectInstance(
+    sampleRate: 44100,
+    channels: AudioChannels.Stereo);
+```
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `PendingBufferCount` | `int` | Number of submitted PCM buffers still queued for playback. |
+| `State` | `SoundState` | Overridden from the base class; reflects dynamic playback state. |
+| `IsLooped` | `bool` | Always `false`. Setting `true` throws `InvalidOperationException`. Submit looped data manually instead. |
+
+### Events
+
+| Event | Signature | Description |
+|-------|-----------|-------------|
+| `BufferNeeded` | `EventHandler<EventArgs>` | Raised when `PendingBufferCount` falls to 2 or below. Subscribe to this event to feed the next chunk of PCM data. |
+
+### Methods
+
+| Signature | Returns | Description |
+|-----------|---------|-------------|
+| `SubmitBuffer(byte[] buffer)` | `void` | Queues the entire byte array for playback. Buffer length must be a multiple of `2 × channelCount`. |
+| `SubmitBuffer(byte[] buffer, int offset, int count)` | `void` | Queues a slice of the array. Both `offset` and `count` must satisfy alignment. |
+| `GetSampleDuration(int sizeInBytes)` | `TimeSpan` | Calculates how long the given byte count will take to play at this instance's sample rate and channel count. |
+| `GetSampleSizeInBytes(TimeSpan duration)` | `int` | Calculates the byte count for the given duration at this instance's settings. |
+| `Play()` | `void` | Starts playback. Raises `BufferNeeded` immediately so you can submit the initial buffer. |
+| `Pause()`, `Resume()`, `Stop()`, `Stop(bool immediate)` | `void` | Standard playback controls; `Stop` releases all queued buffers. |
+
+<Tip>
+Keep `PendingBufferCount` above 1 at all times to prevent audible gaps. The `BufferNeeded` event can be raised multiple times per audio callback; submit a fresh buffer on each invocation.
+</Tip>
+
+### Example
+
+```csharp
+var dynSfx = new DynamicSoundEffectInstance(44100, AudioChannels.Stereo);
+dynSfx.BufferNeeded += (s, e) =>
+{
+    byte[] nextChunk = audioDecoder.ReadNextChunk(dynSfx.GetSampleSizeInBytes(
+        TimeSpan.FromMilliseconds(100)));
+    if (nextChunk.Length > 0)
+        dynSfx.SubmitBuffer(nextChunk);
+};
+
+dynSfx.Play();
+```
+
+---
+
+## AudioChannels Enum
+
+| Value | Description |
+|-------|-------------|
+| `AudioChannels.Mono` | Single audio channel (1 sample per frame). |
+| `AudioChannels.Stereo` | Two interleaved audio channels (left, right). |
+
+---
+
+## AudioEmitter
+
+`AudioEmitter` represents a 3D sound source in world space. Pass it to `SoundEffectInstance.Apply3D()` together with an `AudioListener`.
+
+### Constructor
+
+```csharp
+var emitter = new AudioEmitter();
+// Defaults: Position = Vector3.Zero, Velocity = Vector3.Zero,
+//           Forward = Vector3.Forward (0,0,-1), Up = Vector3.Up (0,1,0),
+//           DopplerScale = 1.0
+```
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `Position` | `Vector3` | World-space position of the sound source. |
+| `Velocity` | `Vector3` | Velocity vector used only for Doppler calculations. Defaults to `Vector3.Zero`. |
+| `Forward` | `Vector3` | Forward direction of the emitter. Must be orthonormal with `Up`. Defaults to `Vector3.Forward`. |
+| `Up` | `Vector3` | Up direction. Must be orthonormal with `Forward`. Defaults to `Vector3.Up`. |
+| `DopplerScale` | `float` | Per-emitter multiplier for Doppler intensity. Must be `>= 0`. Defaults to `1.0`. |
+
+<Warning>
+`Forward` and `Up` must be orthonormal (perpendicular unit vectors). Failing this constraint produces undefined 3D audio behavior.
+</Warning>
+
+---
+
+## AudioListener
+
+`AudioListener` represents the "ear" — typically the player's camera or character — for 3D audio calculations.
+
+### Constructor
+
+```csharp
+var listener = new AudioListener();
+// Defaults: same as AudioEmitter (Position/Velocity = Zero,
+//           Forward = Forward, Up = Up)
+```
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `Position` | `Vector3` | World-space position of the listener. |
+| `Velocity` | `Vector3` | Velocity vector used only for Doppler. Defaults to `Vector3.Zero`. |
+| `Forward` | `Vector3` | Forward direction. Must be orthonormal with `Up`. |
+| `Up` | `Vector3` | Up direction. Must be orthonormal with `Forward`. |
+
+### 3D Audio Example
+
+```csharp
+AudioListener listener = new AudioListener();
+AudioEmitter   emitter  = new AudioEmitter();
+
+SoundEffect gunshot     = Content.Load<SoundEffect>("Sounds/Gunshot");
+SoundEffectInstance sfx = gunshot.CreateInstance();
+
+protected override void Update(GameTime gameTime)
+{
+    // Keep listener at camera position
+    listener.Position = camera.Position;
+    listener.Forward  = camera.Forward;
+    listener.Up       = camera.Up;
+
+    // Keep emitter at NPC position + velocity for Doppler
+    emitter.Position = npc.Position;
+    emitter.Velocity = npc.Velocity;
+
+    sfx.Apply3D(listener, emitter);
+}
+
+// Trigger the shot
+sfx.Play();
+```
+
+---
+
+## Microphone (Overview)
+
+`Microphone` is defined in `Microsoft.Xna.Framework.Audio` and provides access to recording devices. Support varies by platform.
+
+### Key Members
+
+| Member | Type | Description |
+|--------|------|-------------|
+| `Microphone.All` | `ReadOnlyCollection<Microphone>` | All recording devices detected on the system. Querying this list initializes the audio system. |
+| `Microphone.Default` | `Microphone` | The system default microphone, or `null` if none. |
+| `Name` | `string` | Human-readable device name. |
+| `State` | `MicrophoneState` | `Started` or `Stopped`. |
+| `Start()` | `void` | Begins recording. |
+| `Stop()` | `void` | Ends recording. |
+| `GetData(byte[] buffer)` | `int` | Copies recorded PCM data into `buffer`. Returns bytes written. |
+| `BufferReady` | `EventHandler<EventArgs>` | Raised periodically when new PCM data is available. |
+
+<Note>
+Microphone support requires explicit platform permissions on iOS and Android. Request the appropriate runtime permission before accessing `Microphone.All`.
+</Note>

@@ -1,0 +1,250 @@
+---
+title: "Game Class API Reference"
+sidebarTitle: "Game"
+description: "Complete API reference for the MonoGame Game class. Documents the constructor, lifecycle methods (Initialize, LoadContent, Update, Draw), properties, and events."
+---
+
+The `Game` class is the central entry point for all MonoGame applications. It manages the game window, sets up the graphics device, and drives the main game loop by calling `Update` and `Draw` on each tick. Every MonoGame project subclasses `Game` and overrides the lifecycle methods to inject game-specific logic.
+
+```csharp
+using Microsoft.Xna.Framework;
+
+public class MyGame : Game
+{
+    GraphicsDeviceManager _graphics;
+
+    public MyGame()
+    {
+        _graphics = new GraphicsDeviceManager(this);
+        Content.RootDirectory = "Content";
+    }
+
+    protected override void Initialize() { base.Initialize(); }
+    protected override void LoadContent() { /* load assets */ }
+    protected override void Update(GameTime gameTime) { base.Update(gameTime); }
+    protected override void Draw(GameTime gameTime)
+    {
+        GraphicsDevice.Clear(Color.CornflowerBlue);
+        base.Draw(gameTime);
+    }
+}
+```
+
+## Namespace
+
+```
+Microsoft.Xna.Framework
+```
+
+## Inheritance
+
+`Game` implements `IDisposable`.
+
+---
+
+## Constructor
+
+<ParamField path="Game()" type="constructor">
+  Creates a new `Game` instance. Initialises `LaunchParameters`, `Services`, `Components`, and the internal `ContentManager`. Also creates the platform-specific `GamePlatform` and registers it with the service container.
+</ParamField>
+
+```csharp
+public Game()
+```
+
+---
+
+## Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `Content` | `ContentManager` | The content manager used to load game assets. Throws `ArgumentNullException` if set to `null`. |
+| `Components` | `GameComponentCollection` | Collection of `IGameComponent` objects attached to this game. Components are automatically initialized and updated/drawn each frame. |
+| `Services` | `GameServiceContainer` | Service locator container for game-wide services (e.g., graphics device, audio). |
+| `Window` | `GameWindow` | The OS window that hosts the game. |
+| `GraphicsDevice` | `GraphicsDevice` | The active `GraphicsDevice` for rendering. Throws `InvalidOperationException` if no graphics device service is registered. |
+| `IsActive` | `bool` | `true` when the game window has focus. |
+| `IsMouseVisible` | `bool` | Gets or sets whether the OS mouse cursor is visible over the game window. |
+| `IsFixedTimeStep` | `bool` | When `true` (default), the game loop targets `TargetElapsedTime` between updates. When `false`, the game runs as fast as possible. |
+| `TargetElapsedTime` | `TimeSpan` | The desired time between frames when `IsFixedTimeStep` is `true`. Defaults to ~16.67 ms (60 fps). Must be positive and ≤ `MaxElapsedTime`. |
+| `InactiveSleepTime` | `TimeSpan` | How long the game sleeps per tick while it is not the focused application. Defaults to 20 ms. Must be ≥ `TimeSpan.Zero`. |
+| `MaxElapsedTime` | `TimeSpan` | Maximum accumulated elapsed time before the game stops trying to catch up. Defaults to 500 ms. MonoGame-specific extension. |
+| `LaunchParameters` | `LaunchParameters` | Command-line or platform-specific startup parameters passed to the game. |
+| `IsRunningSlowly` | `bool` | Exposed via `GameTime.IsRunningSlowly`. Set automatically when the game accumulates more than 5 frames of update lag. |
+
+---
+
+## Lifecycle Methods
+
+These virtual methods are the primary extension points for game logic. Override them in your `Game` subclass.
+
+### Initialize
+
+```csharp
+protected virtual void Initialize()
+```
+
+Called once before the first call to `Update`. Initialises all `GameComponent` instances that are already in `Components`, then calls `LoadContent`. Override to perform game-wide one-time setup (create cameras, reset state, etc.).
+
+<Note>
+Always call `base.Initialize()` unless you explicitly want to skip component initialization and content loading.
+</Note>
+
+---
+
+### LoadContent
+
+```csharp
+protected virtual void LoadContent()
+```
+
+Called once after `Initialize` completes. Override to load textures, sounds, fonts, and other content via `Content.Load<T>(assetName)`.
+
+---
+
+### Update
+
+```csharp
+protected virtual void Update(GameTime gameTime)
+```
+
+Called once per logical game tick. In fixed-time-step mode, multiple `Update` calls may occur before a single `Draw` call if the game is running slowly.
+
+<ParamField path="gameTime" type="GameTime">
+  Contains `TotalGameTime` (total elapsed game time), `ElapsedGameTime` (time since the last `Update`), and `IsRunningSlowly`.
+</ParamField>
+
+---
+
+### Draw
+
+```csharp
+protected virtual void Draw(GameTime gameTime)
+```
+
+Called once per rendered frame, immediately after all pending `Update` calls for that tick. Call `GraphicsDevice.Clear`, issue draw calls, etc. here.
+
+<ParamField path="gameTime" type="GameTime">
+  Contains `TotalGameTime`, `ElapsedGameTime` (total elapsed time across all Update steps in this tick), and `IsRunningSlowly`.
+</ParamField>
+
+---
+
+### UnloadContent
+
+```csharp
+protected virtual void UnloadContent()
+```
+
+Called just before the game exits. Override to release any manually managed resources that the `ContentManager` does not own.
+
+---
+
+## Other Methods
+
+| Method | Description |
+|---|---|
+| `Run()` | Starts the game loop using the platform default `GameRunBehavior` (synchronous or asynchronous). |
+| `Run(GameRunBehavior)` | Starts the game loop with explicit synchronous or asynchronous behavior. |
+| `RunOneFrame()` | Runs exactly one full tick of the game loop, then returns. Useful for embedding MonoGame inside another application. |
+| `Tick()` | Advances the game loop by one iteration — at least one `Update` call and one `Draw` call (unless suppressed). |
+| `Exit()` | Requests the game to exit at the end of the current tick. On iOS this throws `NotSupportedException` due to platform policy. |
+| `SuppressDraw()` | Prevents `Draw` from being called this tick. `Update` still runs. |
+| `ResetElapsedTime()` | Resets the accumulated elapsed game time to zero. Call after a long loading pause to avoid a burst of catch-up updates. |
+| `Dispose()` | Releases all managed resources, disposes components, content, the graphics device, and the platform. Raises the `Disposed` event. |
+
+---
+
+## Protected Methods
+
+| Method | Signature | Description |
+|---|---|---|
+| `BeginDraw` | `protected virtual bool BeginDraw()` | Returns `true` if `Draw` should be called this frame. Returns `false` to skip drawing. |
+| `EndDraw` | `protected virtual void EndDraw()` | Called after `Draw`. Default implementation calls `Platform.Present()` to flip the back buffer. |
+| `BeginRun` | `protected virtual void BeginRun()` | Called after `Initialize` but before the first `Update`. |
+| `EndRun` | `protected virtual void EndRun()` | Called when the game loop terminates before the process exits. |
+| `OnActivated` | `protected virtual void OnActivated(object sender, EventArgs args)` | Raises the `Activated` event. |
+| `OnDeactivated` | `protected virtual void OnDeactivated(object sender, EventArgs args)` | Raises the `Deactivated` event. |
+| `OnExiting` | `protected virtual void OnExiting(object sender, ExitingEventArgs args)` | Raises the `Exiting` event. Set `args.Cancel = true` to abort the exit. |
+
+---
+
+## Events
+
+| Event | Type | Description |
+|---|---|---|
+| `Activated` | `EventHandler<EventArgs>` | Raised when the game window gains focus. |
+| `Deactivated` | `EventHandler<EventArgs>` | Raised when the game window loses focus. |
+| `Disposed` | `EventHandler<EventArgs>` | Raised when `Dispose()` is called. |
+| `Exiting` | `EventHandler<ExitingEventArgs>` | Raised when `Exit()` is processed. Subscribe to perform cleanup or cancel the exit via `ExitingEventArgs.Cancel`. |
+
+---
+
+## Usage Examples
+
+### Basic subclass
+
+```csharp
+public class MyGame : Game
+{
+    GraphicsDeviceManager _graphics;
+    SpriteBatch _spriteBatch;
+    Texture2D _logo;
+
+    public MyGame()
+    {
+        _graphics = new GraphicsDeviceManager(this);
+        _graphics.PreferredBackBufferWidth  = 1280;
+        _graphics.PreferredBackBufferHeight = 720;
+        Content.RootDirectory = "Content";
+        IsMouseVisible = true;
+    }
+
+    protected override void LoadContent()
+    {
+        _spriteBatch = new SpriteBatch(GraphicsDevice);
+        _logo = Content.Load<Texture2D>("logo");
+    }
+
+    protected override void Update(GameTime gameTime)
+    {
+        if (GamePad.GetState(PlayerIndex.One).Buttons.Back == ButtonState.Pressed
+            || Keyboard.GetState().IsKeyDown(Keys.Escape))
+            Exit();
+
+        base.Update(gameTime);
+    }
+
+    protected override void Draw(GameTime gameTime)
+    {
+        GraphicsDevice.Clear(Color.CornflowerBlue);
+        _spriteBatch.Begin();
+        _spriteBatch.Draw(_logo, Vector2.Zero, Color.White);
+        _spriteBatch.End();
+        base.Draw(gameTime);
+    }
+}
+```
+
+### Handling focus changes
+
+```csharp
+public MyGame()
+{
+    Activated   += (s, e) => Console.WriteLine("Game focused");
+    Deactivated += (s, e) => Console.WriteLine("Game unfocused");
+}
+```
+
+### Variable time step
+
+```csharp
+public MyGame()
+{
+    IsFixedTimeStep = false;   // run as fast as possible
+}
+```
+
+<Warning>
+Disabling the fixed time step removes the built-in frame-rate limiter. Physics and gameplay logic that assumes a constant delta time must be updated accordingly.
+</Warning>

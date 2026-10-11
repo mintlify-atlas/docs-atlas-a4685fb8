@@ -1,0 +1,214 @@
+---
+title: "Create and Structure Your First MonoGame Project"
+sidebarTitle: "Project Setup"
+description: "Scaffold a MonoGame project, understand the generated file structure, and configure GraphicsDeviceManager for your first build."
+---
+
+Once you have the MonoGame templates installed, a single `dotnet new` command produces a fully working game project. The scaffold is intentionally minimal — a handful of files that cover the entry point, the main game class, and the content project — so you can understand every line before writing your own code. This page explains what each generated file does and shows you how to configure the window, resolution, and display mode before you build for the first time.
+
+## Scaffolding the Project
+
+Run the following command to create a new DesktopGL project named `MyGame`:
+
+```bash
+dotnet new mgdesktopgl -o MyGame
+cd MyGame
+```
+
+<Note>
+  Swap `mgdesktopgl` for another template identifier if you are targeting a different platform — for example `mgwindowsdx` for Windows DirectX. See the [Installation guide](/getting-started/installation) for the full list.
+</Note>
+
+## Generated File Structure
+
+After scaffolding, the project directory looks like this:
+
+```
+MyGame/
+├── MyGame.csproj          # .NET project file — references MonoGame.Framework.DesktopGL
+├── Program.cs             # Application entry point
+├── Game1.cs               # Your game class — subclass of Microsoft.Xna.Framework.Game
+├── Icon.bmp               # Window icon
+├── Icon.ico               # Window icon (Windows)
+└── Content/
+    └── Content.mgcb       # MonoGame Content Builder project file
+```
+
+### What each file does
+
+| File | Purpose |
+|---|---|
+| `MyGame.csproj` | Standard .NET project file. References the platform NuGet package and configures the content pipeline build step. |
+| `Program.cs` | Entry point. Creates a `Game1` instance and calls `Run()`. |
+| `Game1.cs` | Your game class. Override `Initialize`, `LoadContent`, `Update`, and `Draw` here. |
+| `Content/Content.mgcb` | The MonoGame Content Builder project. Lists every asset to compile and how to process it. |
+
+## Entry Point: `Program.cs`
+
+The generated `Program.cs` is just two lines:
+
+```csharp
+using var game = new Game1();
+game.Run();
+```
+
+`Game.Run()` starts the platform event loop and does not return until the game exits. The `using var` declaration ensures `Dispose()` is called automatically when `Run()` returns, which cleans up the graphics device, content manager, and all registered services.
+
+## The Game Class: `Game1.cs`
+
+The generated `Game1.cs` derives from `Microsoft.Xna.Framework.Game` and overrides the four core lifecycle methods. Below is an annotated version showing the constructor and all overrides with common configuration applied:
+
+```csharp
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+using Microsoft.Xna.Framework.Input;
+
+public class Game1 : Game
+{
+    private GraphicsDeviceManager _graphics;
+    private SpriteBatch _spriteBatch;
+
+    public Game1()
+    {
+        // GraphicsDeviceManager must be created in the constructor.
+        // It registers itself with the game's service container automatically.
+        _graphics = new GraphicsDeviceManager(this);
+
+        // Set the folder that ContentManager searches for compiled .xnb files.
+        Content.RootDirectory = "Content";
+
+        // Show the OS mouse cursor over the game window.
+        IsMouseVisible = true;
+
+        // Set the window title.
+        Window.Title = "My MonoGame Game";
+
+        // Choose a preferred resolution.
+        _graphics.PreferredBackBufferWidth  = 1280;
+        _graphics.PreferredBackBufferHeight = 720;
+
+        // Uncomment to start in full screen.
+        // _graphics.IsFullScreen = true;
+    }
+
+    protected override void Initialize()
+    {
+        // Called once before the first Update/Draw.
+        // Initialize non-graphical resources and game state here.
+        // Always call base.Initialize() — it finalizes the graphics device
+        // and then calls LoadContent().
+        base.Initialize();
+    }
+
+    protected override void LoadContent()
+    {
+        // Called once by base.Initialize() after the GraphicsDevice is ready.
+        // Create SpriteBatch and load assets from the content pipeline here.
+        _spriteBatch = new SpriteBatch(GraphicsDevice);
+    }
+
+    protected override void Update(GameTime gameTime)
+    {
+        // Called every frame (or on every fixed time step, by default).
+        // Handle input, update physics, and advance game state here.
+        if (GamePad.GetState(PlayerIndex.One).Buttons.Back == ButtonState.Pressed
+            || Keyboard.GetState().IsKeyDown(Keys.Escape))
+        {
+            Exit();
+        }
+
+        base.Update(gameTime);
+    }
+
+    protected override void Draw(GameTime gameTime)
+    {
+        // Called once per rendered frame.
+        // Clear the back buffer, then draw everything.
+        GraphicsDevice.Clear(Color.CornflowerBlue);
+
+        // _spriteBatch.Begin();
+        // ... draw sprites ...
+        // _spriteBatch.End();
+
+        base.Draw(gameTime);
+    }
+}
+```
+
+## Configuring the Graphics Device
+
+All display settings are controlled through `GraphicsDeviceManager`. The instance **must** be created in the `Game` constructor because MonoGame registers it as a service before `Initialize()` is called.
+
+### Setting the Resolution
+
+```csharp
+_graphics.PreferredBackBufferWidth  = 1920;
+_graphics.PreferredBackBufferHeight = 1080;
+```
+
+The default back buffer size, if you do not specify one, is **800 × 480** (`GraphicsDeviceManager.DefaultBackBufferWidth` and `DefaultBackBufferHeight`).
+
+### Enabling Full Screen
+
+Set `IsFullScreen` before `Initialize()` runs (i.e., in the constructor) so MonoGame can apply the setting during device creation:
+
+```csharp
+_graphics.IsFullScreen = true;
+```
+
+If you need to toggle full screen at runtime, call `ToggleFullScreen()` or set the property and then call `ApplyChanges()`:
+
+```csharp
+_graphics.IsFullScreen = !_graphics.IsFullScreen;
+_graphics.ApplyChanges();
+```
+
+### VSync
+
+VSync is **enabled by default** (`SynchronizeWithVerticalRetrace = true`). To disable it:
+
+```csharp
+_graphics.SynchronizeWithVerticalRetrace = false;
+_graphics.ApplyChanges();
+```
+
+### Mouse Visibility
+
+```csharp
+IsMouseVisible = true;  // show the OS cursor (default: false)
+```
+
+## Running the Project
+
+<Steps>
+  <Step title="Restore packages">
+    ```bash
+    dotnet restore
+    ```
+  </Step>
+  <Step title="Build and run">
+    ```bash
+    dotnet run
+    ```
+
+    A 1280 × 720 window filled with cornflower blue should appear. Press **Escape** (or Back on a gamepad) to close it.
+  </Step>
+  <Step title="Build a release binary">
+    ```bash
+    dotnet publish -c Release
+    ```
+
+    The output folder will contain your executable alongside a `Content/` folder holding all compiled `.xnb` assets.
+  </Step>
+</Steps>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Game Loop" icon="rotate" href="/getting-started/game-loop">
+    Learn how `Update` and `Draw` are called, how to use `GameTime` for frame-rate independent movement, and how to control the timestep.
+  </Card>
+  <Card title="Content Pipeline" icon="boxes-stacked" href="/getting-started/content-pipeline">
+    Add textures, fonts, audio, and models to your project using the MonoGame Content Pipeline and load them with `Content.Load<T>()`.
+  </Card>
+</CardGroup>

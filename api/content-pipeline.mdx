@@ -1,0 +1,351 @@
+---
+title: "Content Pipeline API Reference: Importers and Processors"
+sidebarTitle: "Content Pipeline"
+description: "API reference for the MonoGame Content Pipeline. Covers ContentImporter, ContentProcessor, ContentImporterContext, ContentProcessorContext, and custom pipeline extensions."
+---
+
+The MonoGame Content Pipeline is a build-time system that converts raw game assets (textures, models, audio, fonts, etc.) into platform-optimized `.xnb` binary files loaded at runtime by `ContentManager`. The pipeline is extensible: you can author **importers** that read custom file formats, **processors** that transform the imported data, and **type readers** that deserialize the final `.xnb` payload at runtime. All extension types live in the `Microsoft.Xna.Framework.Content.Pipeline` namespace and are compiled into a separate library (referenced by the `.mgcb` project, not the game itself).
+
+The two core abstract base classes are `ContentImporter<T>` — which reads a file from disk and returns an intermediate object — and `ContentProcessor<TInput, TOutput>` — which transforms that intermediate object into the final serializable form. Both are decorated with attributes that register them with the MGCB tool and allow them to appear in the content project GUI.
+
+---
+
+## ContentImporter&lt;T&gt;
+
+An abstract generic base class for all content importers.
+**Namespace:** `Microsoft.Xna.Framework.Content.Pipeline`
+**Assembly:** `MonoGame.Framework.Content.Pipeline`
+
+### Class Declaration
+
+```csharp
+public abstract class ContentImporter<T> : IContentImporter where T : notnull
+```
+
+### Attribute
+
+Apply `[ContentImporter]` to your subclass to register it with the pipeline tool:
+
+```csharp
+[ContentImporter(".csv", DisplayName = "CSV Data Importer",
+                DefaultProcessor = "CsvDataProcessor")]
+public class CsvDataImporter : ContentImporter<CsvData>
+{
+    public override CsvData Import(string filename, ContentImporterContext context) { ... }
+}
+```
+
+**ContentImporterAttribute parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| First positional arg(s) | `string` | One or more file extensions this importer handles (e.g., `".csv"`, `".json"`). |
+| `DisplayName` | `string` | Human-readable name shown in the MGCB editor. |
+| `DefaultProcessor` | `string` | Name of the processor type to use by default when this importer is selected. |
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `Version` | `string` | Version string derived from the assembly version. Used by the pipeline to determine if a rebuild is needed. Can be overridden. |
+
+### Abstract Method
+
+<ParamField body="filename" type="string" required>
+  Absolute path to the source asset file on disk. Passed by the build system.
+</ParamField>
+<ParamField body="context" type="ContentImporterContext" required>
+  Provides logging, dependency tracking, and directory information for the current import operation.
+</ParamField>
+
+```csharp
+public abstract T Import(string filename, ContentImporterContext context);
+```
+
+---
+
+## ContentImporterContext
+
+Passed to `ContentImporter<T>.Import()` to provide build-time services.
+
+| Member | Type | Description |
+|--------|------|-------------|
+| `Logger` | `ContentBuildLogger` | Write informational, warning, or error messages to the build log. |
+| `IntermediateDirectory` | `string` | Directory where intermediate build artifacts are written. |
+| `OutputDirectory` | `string` | Directory where the final `.xnb` files are written. |
+| `AddDependency(string filename)` | `void` | Registers an additional file as a build dependency. The asset is rebuilt if this file changes. |
+
+```csharp
+public override CsvData Import(string filename, ContentImporterContext context)
+{
+    context.Logger.LogMessage($"Importing {filename}");
+
+    // Mark a schema file as a dependency so rebuilds trigger on schema changes
+    string schemaFile = Path.ChangeExtension(filename, ".schema.json");
+    if (File.Exists(schemaFile))
+        context.AddDependency(schemaFile);
+
+    return CsvData.LoadFrom(filename);
+}
+```
+
+---
+
+## ContentProcessor&lt;TInput, TOutput&gt;
+
+An abstract generic base class for all content processors.
+**Namespace:** `Microsoft.Xna.Framework.Content.Pipeline`
+
+### Class Declaration
+
+```csharp
+public abstract class ContentProcessor<TInput, TOutput> : IContentProcessor
+    where TOutput : notnull
+```
+
+### Attribute
+
+```csharp
+[ContentProcessor(DisplayName = "CSV Data Processor")]
+public class CsvDataProcessor : ContentProcessor<CsvData, CsvDataContent>
+{
+    public override CsvDataContent Process(CsvData input, ContentProcessorContext context) { ... }
+}
+```
+
+**ContentProcessorAttribute parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `DisplayName` | `string` | Human-readable name shown in the MGCB editor. |
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `Version` | `string` | Assembly version string. Used by the pipeline to determine if a rebuild is needed. Overridable. |
+
+### Abstract Method
+
+<ParamField body="input" type="TInput" required>
+  The imported object returned by the associated importer.
+</ParamField>
+<ParamField body="context" type="ContentProcessorContext" required>
+  Provides logging, platform targeting, and nested build services.
+</ParamField>
+
+```csharp
+public abstract TOutput Process(TInput input, ContentProcessorContext context);
+```
+
+---
+
+## ContentProcessorContext
+
+Passed to `ContentProcessor<TInput, TOutput>.Process()` to provide build-time services and nested pipeline operations.
+
+| Member | Type | Description |
+|--------|------|-------------|
+| `Logger` | `ContentBuildLogger` | Write informational, warning, or error messages. |
+| `TargetPlatform` | `TargetPlatform` | The platform being built for (e.g., `Windows`, `Android`, `iOS`). Use to apply platform-specific transformations. |
+| `TargetProfile` | `GraphicsProfile` | `HiDef` or `Reach`. |
+| `BuildConfiguration` | `string` | `"Release"` or `"Debug"`. |
+| `OutputDirectory` | `string` | Directory for final `.xnb` outputs. |
+| `IntermediateDirectory` | `string` | Directory for intermediate artifacts. |
+| `AddDependency(string filename)` | `void` | Marks a file as a build dependency. |
+| `AddOutputFile(string filename)` | `void` | Registers an additional output file that should be copied to the output directory. |
+| `BuildAsset<TInput, TOutput>(ExternalReference<TInput> source, string processorName, ...)` | `ExternalReference<TOutput>` | Triggers a nested pipeline build of another asset (e.g., a texture referenced by a model). |
+| `Convert<TInput, TOutput>(TInput input, string processorName, ...)` | `TOutput` | Converts an already-imported object in-process using the named processor. |
+
+```csharp
+public override CsvDataContent Process(CsvData input, ContentProcessorContext context)
+{
+    context.Logger.LogMessage("Processing CSV with {0} rows", input.Rows.Count);
+
+    if (context.TargetPlatform == TargetPlatform.Android)
+    {
+        // Apply mobile-specific optimizations
+    }
+
+    return new CsvDataContent(input.Rows);
+}
+```
+
+---
+
+## ContentTypeReader&lt;T&gt;
+
+A `ContentTypeReader<T>` deserializes a type from the `.xnb` binary stream at runtime inside the game. It is the runtime counterpart to a processor. For custom pipeline types you must also ship a matching type reader.
+
+**Namespace:** `Microsoft.Xna.Framework.Content`
+**Assembly:** The *game* assembly (or a shared runtime library), **not** the pipeline assembly.
+
+```csharp
+public class CsvDataContentReader : ContentTypeReader<CsvDataContent>
+{
+    protected override CsvDataContent Read(ContentReader input, CsvDataContent existingInstance)
+    {
+        int rowCount = input.ReadInt32();
+        var rows = new List<string[]>(rowCount);
+        for (int i = 0; i < rowCount; i++)
+        {
+            int colCount = input.ReadInt32();
+            var cols = new string[colCount];
+            for (int j = 0; j < colCount; j++)
+                cols[j] = input.ReadString();
+            rows.Add(cols);
+        }
+        return new CsvDataContent(rows);
+    }
+}
+```
+
+<Note>
+MonoGame discovers type readers by scanning assemblies at runtime. The reader class must be in a referenced assembly and must subclass `ContentTypeReader<T>`. No attribute is required by default, but you may add `[ContentTypeReader]` as a hint for tooling.
+</Note>
+
+---
+
+## Built-in Importers
+
+| Importer | File Extensions | Description |
+|----------|----------------|-------------|
+| `TextureImporter` | `.bmp`, `.jpg`, `.jpeg`, `.png`, `.gif`, `.tga`, `.dds` | Imports raster images. |
+| `FontDescriptionImporter` | `.spritefont` | Imports XML font description files. |
+| `SoundEffectImporter` | `.wav`, `.mp3`, `.ogg`, `.wma` | Imports audio for sound effects. |
+| `SongImporter` | `.mp3`, `.ogg`, `.wma`, `.wav` | Imports audio for background music. |
+| `EffectImporter` | `.fx` | Imports HLSL effect files. |
+| `FbxImporter` | `.fbx` | Imports FBX 3D models. |
+| `XImporter` | `.x` | Imports DirectX `.x` 3D models. |
+| `FontTextureImporter` | `.png` | Imports a pre-rendered font texture sheet. |
+| `VideoImporter` | `.mp4`, `.wmv`, `.avi` | Imports video files (platform support varies). |
+
+---
+
+## Built-in Processors
+
+| Processor | Input | Output | Description |
+|-----------|-------|--------|-------------|
+| `TextureProcessor` | `TextureContent` | `TextureContent` | Compresses, resizes, and generates mipmaps. |
+| `FontDescriptionProcessor` | `FontDescription` | `SpriteFontContent` | Rasterizes TrueType/OpenType fonts into a sprite sheet. |
+| `SoundEffectProcessor` | `AudioContent` | `SoundEffectContent` | Converts audio to the target platform's native format. |
+| `SongProcessor` | `AudioContent` | `SongContent` | Converts music to the target platform's native streaming format. |
+| `EffectProcessor` | `EffectContent` | `CompiledEffectContent` | Compiles HLSL to the target platform's shader bytecode. |
+| `ModelProcessor` | `NodeContent` | `ModelContent` | Builds mesh, material, and animation data from a 3D scene. |
+
+---
+
+## Complete Custom Importer + Processor Example
+
+The following example implements a simple CSV data importer and processor pair that can be referenced in an `.mgcb` project to load tabular data into a game.
+
+**Pipeline library (referenced by MGCB):**
+
+```csharp
+// --- CsvData.cs (shared between pipeline and game) ---
+public class CsvDataContent
+{
+    public List<string[]> Rows { get; }
+    public CsvDataContent(List<string[]> rows) => Rows = rows;
+}
+
+// --- CsvDataImporter.cs (pipeline library only) ---
+using Microsoft.Xna.Framework.Content.Pipeline;
+
+[ContentImporter(".csv",
+    DisplayName    = "CSV Data Importer",
+    DefaultProcessor = "CsvDataProcessor")]
+public class CsvDataImporter : ContentImporter<CsvDataContent>
+{
+    public override CsvDataContent Import(
+        string filename, ContentImporterContext context)
+    {
+        context.Logger.LogMessage($"Importing CSV: {filename}");
+
+        var rows = new List<string[]>();
+        foreach (var line in File.ReadAllLines(filename))
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            rows.Add(line.Split(','));
+        }
+
+        context.Logger.LogMessage($"  {rows.Count} rows imported.");
+        return new CsvDataContent(rows);
+    }
+}
+
+// --- CsvDataProcessor.cs (pipeline library only) ---
+[ContentProcessor(DisplayName = "CSV Data Processor")]
+public class CsvDataProcessor : ContentProcessor<CsvDataContent, CsvDataContent>
+{
+    public override CsvDataContent Process(
+        CsvDataContent input, ContentProcessorContext context)
+    {
+        context.Logger.LogMessage(
+            $"Processing {input.Rows.Count} rows for {context.TargetPlatform}");
+        // Trim whitespace from all cells
+        var cleaned = input.Rows
+            .Select(row => row.Select(c => c.Trim()).ToArray())
+            .ToList();
+        return new CsvDataContent(cleaned);
+    }
+}
+```
+
+**Runtime type reader (game assembly):**
+
+```csharp
+// --- CsvDataContentReader.cs (game project) ---
+using Microsoft.Xna.Framework.Content;
+
+public class CsvDataContentReader : ContentTypeReader<CsvDataContent>
+{
+    protected override CsvDataContent Read(
+        ContentReader input, CsvDataContent existingInstance)
+    {
+        int rowCount = input.ReadInt32();
+        var rows = new List<string[]>(rowCount);
+
+        for (int i = 0; i < rowCount; i++)
+        {
+            int colCount = input.ReadInt32();
+            var cols = new string[colCount];
+            for (int j = 0; j < colCount; j++)
+                cols[j] = input.ReadString();
+            rows.Add(cols);
+        }
+
+        return new CsvDataContent(rows);
+    }
+}
+```
+
+**Using the asset in-game:**
+
+```csharp
+protected override void LoadContent()
+{
+    // Load the compiled CSV asset just like any other content
+    CsvDataContent levelData = Content.Load<CsvDataContent>("Data/LevelConfig");
+
+    foreach (var row in levelData.Rows)
+    {
+        string entityType = row[0];
+        float x = float.Parse(row[1]);
+        float y = float.Parse(row[2]);
+        SpawnEntity(entityType, new Vector2(x, y));
+    }
+}
+```
+
+**Content project entry (`.mgcb`):**
+
+```
+/importer:CsvDataImporter
+/processor:CsvDataProcessor
+/build:Data/LevelConfig.csv
+```
+
+<Tip>
+Keep the pipeline assembly and the runtime shared types in separate projects: the pipeline library references `MonoGame.Framework.Content.Pipeline`, while the game project must **not** reference the pipeline assembly — only the shared types and the type reader.
+</Tip>

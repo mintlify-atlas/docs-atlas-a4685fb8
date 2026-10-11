@@ -1,0 +1,107 @@
+---
+title: "MonoGame Supported Platforms and Requirements"
+sidebarTitle: "Platforms"
+description: "MonoGame targets Windows, Linux, macOS, Android, iOS, and registered-developer consoles. Learn which NuGet package to use for each platform."
+---
+
+MonoGame is a cross-platform .NET game framework that lets you ship the same codebase to a wide range of desktop, mobile, and console targets. Each platform is distributed as its own NuGet package so you only pull in the renderer and platform bindings you actually need. Choosing the right package up front saves you from having to restructure your project later, so this page walks through every supported target, its minimum OS version, and any additional requirements.
+
+## Desktop Platforms
+
+Desktop is the most common starting point. MonoGame provides two rendering back-ends for desktop: a DirectX 10 path for Windows and an OpenGL path that runs on Windows, Linux, and macOS from the same binary.
+
+| Platform | NuGet Package | Renderer | Min OS |
+|---|---|---|---|
+| Windows (DirectX) | `MonoGame.Framework.WindowsDX` | DirectX 10 | Windows 10 22H2+ |
+| Windows / Linux / macOS (OpenGL) | `MonoGame.Framework.DesktopGL` | OpenGL | Windows 10 22H2+ · Linux (glibc 2.27+) · macOS 13 "Ventura"+ |
+
+### WindowsDX vs DesktopGL
+
+- **`MonoGame.Framework.WindowsDX`** – Uses DirectX 10, Windows-only, slightly better GPU driver support on Windows, and required for certain Windows-specific features. Also requires the [DirectX June 2010 runtime](https://www.microsoft.com/en-us/download/details.aspx?id=8109) for audio and gamepad support to work correctly.
+- **`MonoGame.Framework.DesktopGL`** – Uses OpenGL and targets all three desktop operating systems from a single project. This is the recommended choice when you want the easiest cross-platform desktop story.
+
+<Note>
+  Linux support requires a distribution with **glibc 2.27** or newer. This includes SteamOS 3.0+, Ubuntu 22.04+, Debian 12+, and CentOS 9+, among others.
+</Note>
+
+## Mobile Platforms
+
+MonoGame ships separate packages for Android and iOS. Both still use OpenGL under the hood and require the relevant .NET workloads to be installed before you can build and deploy.
+
+| Platform | NuGet Package | Min Version |
+|---|---|---|
+| Android | `MonoGame.Framework.Android` | Android 6.0 (API 23)+ |
+| iOS / iPadOS | `MonoGame.Framework.iOS` | iOS/iPadOS 12.2+ |
+
+<Note>
+  Mobile development requires the **MAUI** workload because it includes the debugging tools needed for Android and iOS applications. Install it with `dotnet workload install maui ios android`. See the [Installation guide](/getting-started/installation) for full details. Mobile development is **not** possible from Linux host machines.
+</Note>
+
+## Console Platforms
+
+MonoGame supports the following consoles for licensed developers:
+
+| Console | Notes |
+|---|---|
+| PlayStation 4 | Registered developers only |
+| PlayStation 5 | Registered developers only |
+| Xbox (GDKX & XDK) | Registered developers only |
+| Nintendo Switch 1 | Registered developers only |
+| Nintendo Switch 2 | Registered developers only |
+
+<Note>
+  Console platform packages are **not** distributed on NuGet.org. They are available exclusively to developers who have registered at [monogame.net](https://monogame.net) and agreed to the relevant console manufacturer's NDA. Visit the [console access documentation](https://docs.monogame.net/articles/console_access.html) on the MonoGame website for instructions on how to apply.
+</Note>
+
+## Preview Platforms
+
+MonoGame 3.8.5 adds experimental support for two modern graphics APIs. These are available to source-code users and are not yet recommended for production titles.
+
+| Preview Platform | API | Notes |
+|---|---|---|
+| DesktopVK | Vulkan | Requires the [Vulkan SDK](https://vulkan.lunarg.com/) |
+| Windows DX12 | DirectX 12 | Windows only; DX12 ships with Windows by default |
+
+<Tip>
+  If you are building from source and want to try the Vulkan preview, make sure to run the `setup_env.sh` script on macOS and Linux after installing the Vulkan SDK.
+</Tip>
+
+## .NET and SDK Requirements
+
+All MonoGame platforms share a common .NET baseline:
+
+| Requirement | Minimum | Recommended |
+|---|---|---|
+| .NET SDK | .NET 8 | .NET 9+ |
+| Visual Studio | 2022 (v17.8+) | Latest 2022 / 2026 |
+| VS Code | Any current release | Latest |
+| JetBrains Rider | Any current release | Latest (community-supported) |
+
+You can install the .NET SDK independently from [dotnet.microsoft.com](https://dotnet.microsoft.com/download/dotnet), or by choosing the **.NET desktop development** workload inside the Visual Studio 2022 installer.
+
+## Platform Deprecation
+
+<Warning>
+  **UWP (Universal Windows Platform) is deprecated as of MonoGame 3.8.2.** Microsoft has reduced and is removing support for UWP as a deployment mechanism. New projects should target `MonoGame.Framework.WindowsDX` or `MonoGame.Framework.DesktopGL` instead. Existing UWP projects will continue to compile against older MonoGame releases but will not receive new features or fixes.
+</Warning>
+
+## Quick-Reference Summary
+
+<CardGroup cols={2}>
+  <Card title="Desktop (Windows DX)" icon="windows">
+    `MonoGame.Framework.WindowsDX`  
+    Windows 10 22H2+, DirectX 10, requires DirectX June 2010 runtime for audio/input.
+  </Card>
+  <Card title="Desktop (OpenGL)" icon="display">
+    `MonoGame.Framework.DesktopGL`  
+    Windows · Linux (glibc 2.27+) · macOS 13+, single project for all three OSes.
+  </Card>
+  <Card title="Android" icon="mobile">
+    `MonoGame.Framework.Android`  
+    Android 6.0 (API 23)+, requires MAUI workload.
+  </Card>
+  <Card title="iOS / iPadOS" icon="mobile">
+    `MonoGame.Framework.iOS`  
+    iOS/iPadOS 12.2+, requires MAUI workload, cannot build from Linux.
+  </Card>
+</CardGroup>

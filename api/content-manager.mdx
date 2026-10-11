@@ -1,0 +1,238 @@
+---
+title: "ContentManager API Reference"
+sidebarTitle: "ContentManager"
+description: "API reference for MonoGame's ContentManager class. Documents Load<T>, Unload, UnloadAsset, RootDirectory, and the ServiceProvider for asset management."
+---
+
+`ContentManager` is the runtime bridge between your game code and the compiled `.xnb` asset files produced by the MonoGame Content Builder (MGCB). It loads assets on demand, caches them so repeated calls return the same object instance, and manages their lifetimes — disposing all loaded assets when the manager itself is disposed. Every MonoGame `Game` creates a `ContentManager` and exposes it as `Game.Content`, but you can create additional managers for scene-specific or streaming-level content.
+
+**Namespace:** `Microsoft.Xna.Framework.Content`
+
+---
+
+## ContentManager
+
+### Constructors
+
+<ParamField body="serviceProvider" type="IServiceProvider" required>
+  Provides access to framework services such as `IGraphicsDeviceService`. When constructing inside a `Game`, pass `this.Services`. Must not be `null`.
+</ParamField>
+
+```csharp
+// Typically used inside Game.Initialize():
+var secondary = new ContentManager(this.Services);
+```
+
+<ParamField body="rootDirectory" type="string">
+  The directory (relative to the game's executable) where `.xnb` files are stored. Defaults to an empty string (the executable directory) when omitted. Must not be `null`.
+</ParamField>
+
+```csharp
+// Explicit root directory:
+var uiContent = new ContentManager(this.Services, rootDirectory: "Content/UI");
+```
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `RootDirectory` | `string` | The base directory for asset resolution. Set before calling `Load<T>()`. Can be an absolute path on DesktopGL and Windows. |
+| `ServiceProvider` | `IServiceProvider` | The service provider supplied at construction time. Used internally to obtain `IGraphicsDeviceService` when loading textures. |
+
+### Methods
+
+#### `Load<T>(string assetName)` → `T`
+
+Loads and caches a compiled content pipeline asset.
+
+<ParamField body="assetName" type="string" required>
+  Asset path relative to `RootDirectory`, **without** the `.xnb` extension. Path separators are normalized; case is ignored on case-insensitive file systems. Must not be `null` or empty.
+</ParamField>
+
+```csharp
+// In Game.LoadContent():
+Texture2D playerSprite = Content.Load<Texture2D>("Sprites/Player");
+SpriteFont uiFont      = Content.Load<SpriteFont>("Fonts/Arial16");
+SoundEffect jumpSfx    = Content.Load<SoundEffect>("Sounds/Jump");
+```
+
+Supported built-in types:
+
+| Type | Notes |
+|------|-------|
+| `Texture2D` | Also loads PNG, JPG, and BMP directly (no pipeline required). |
+| `Texture`, `TextureCube` | Compiled texture assets. |
+| `SpriteFont` | Font compiled by the pipeline. |
+| `Effect` | HLSL/GLSL shader compiled by the pipeline. |
+| `Model` | 3D model compiled by the pipeline. |
+| `SoundEffect` | Audio asset compiled by the pipeline. |
+| `Song` | Music asset compiled by the pipeline. |
+
+<Note>
+`Load<T>` returns the **same cached instance** on repeated calls for the same asset name. Do not dispose instances returned by `Load<T>` manually — let `ContentManager` own their lifetime.
+</Note>
+
+**Exceptions:**
+
+| Exception | Condition |
+|-----------|-----------|
+| `ArgumentNullException` | `assetName` is `null` or empty. |
+| `ObjectDisposedException` | Called after the `ContentManager` was disposed. |
+| `ContentLoadException` | Asset file not found, directory missing, XNB type mismatch, or stream error. |
+
+#### `LoadLocalized<T>(string assetName)` → `T`
+
+Culture-aware variant of `Load<T>`. Attempts to load `assetName.en-US.xnb`, then `assetName.en.xnb`, then falls back to `assetName.xnb`.
+
+```csharp
+// Automatically picks the right language file:
+Texture2D ui = Content.LoadLocalized<Texture2D>("Textures/UI/StartButton");
+```
+
+#### `Unload()` → `void`
+
+Disposes all loaded assets and clears the internal cache. After calling `Unload()` you may call `Load<T>()` again to reload fresh copies.
+
+```csharp
+// Between scenes:
+Content.Unload();
+// Load the next scene's content fresh
+nextSceneContent = Content.Load<Texture2D>("Backgrounds/Cave");
+```
+
+<Warning>
+Do not use any asset object after calling `Unload()` — all `IDisposable` assets are disposed, and continued use leads to undefined behavior or exceptions.
+</Warning>
+
+#### `UnloadAsset(string assetName)` → `void`
+
+Disposes and removes a single asset from the cache. The next call to `Load<T>` for the same name will reload it from disk.
+
+<ParamField body="assetName" type="string" required>
+  The same path string used when the asset was originally loaded, relative to `RootDirectory` and without the `.xnb` extension.
+</ParamField>
+
+```csharp
+// Evict a texture to free VRAM during gameplay:
+Content.UnloadAsset("Backgrounds/Intro");
+```
+
+#### `UnloadAssets(IList<string> assetNames)` → `void`
+
+Bulk version of `UnloadAsset`. Calls `UnloadAsset` on each name in the list.
+
+```csharp
+Content.UnloadAssets(new[] { "Level1/Background", "Level1/Tileset" });
+```
+
+#### `OpenStream(string assetName)` → `Stream` *(protected)*
+
+Returns the raw `.xnb` binary stream for an asset. Used internally and by custom `ContentTypeReader` implementations.
+
+```csharp
+// In a custom reader or subclass:
+using var stream = OpenStream("Data/Config");
+```
+
+#### `ReadAsset<T>(string assetName, Action<IDisposable> recordDisposableObject)` → `T` *(protected)*
+
+Low-level method that deserializes an asset from its `.xnb` stream. The `recordDisposableObject` callback is invoked for every `IDisposable` sub-object created during loading, allowing the caller to track them for later disposal.
+
+```csharp
+// In a ContentManager subclass that intercepts asset loading:
+protected override T ReadAsset<T>(string assetName, Action<IDisposable> record)
+{
+    Console.WriteLine($"Loading: {assetName}");
+    return base.ReadAsset<T>(assetName, record);
+}
+```
+
+#### `Dispose()` → `void`
+
+Unloads all cached assets and releases the manager itself. Equivalent to calling `Unload()` and then removing the manager from the global tracking list.
+
+### Caching Behavior
+
+The `ContentManager` stores loaded objects in a case-insensitive dictionary keyed by the normalized asset name (backslashes replaced with forward slashes). If the same logical asset name is requested again, the cached object is returned without touching the disk.
+
+```csharp
+// Both lines return the same Texture2D instance:
+var a = Content.Load<Texture2D>("Sprites/Hero");
+var b = Content.Load<Texture2D>("Sprites\\Hero"); // same key after normalization
+Debug.Assert(ReferenceEquals(a, b)); // true
+```
+
+### Example — Multiple Content Managers
+
+```csharp
+// In Game class:
+ContentManager globalContent;   // Loaded once, never unloaded
+ContentManager levelContent;    // Swapped between levels
+
+protected override void Initialize()
+{
+    globalContent = new ContentManager(Services, "Content/Global");
+    levelContent  = new ContentManager(Services, "Content/Levels");
+}
+
+void LoadLevel(int levelId)
+{
+    levelContent.Unload(); // release previous level
+    levelContent.RootDirectory = $"Content/Levels/Level{levelId}";
+    background = levelContent.Load<Texture2D>("Background");
+    tileset    = levelContent.Load<Texture2D>("Tileset");
+}
+```
+
+---
+
+## ResourceContentManager
+
+`ResourceContentManager` is a built-in subclass of `ContentManager` that loads `.xnb` assets embedded as resources in a .NET assembly, rather than reading from the file system.
+
+**Namespace:** `Microsoft.Xna.Framework.Content`
+
+### Constructor
+
+<ParamField body="serviceProvider" type="IServiceProvider" required>
+  Same as `ContentManager`.
+</ParamField>
+<ParamField body="resourceManager" type="System.Resources.ResourceManager" required>
+  The `ResourceManager` that wraps the assembly's embedded resource stream.
+</ParamField>
+
+```csharp
+// Embed content in the assembly, then load it:
+var resourceContent = new ResourceContentManager(
+    this.Services,
+    Properties.Resources.ResourceManager);
+
+Texture2D icon = resourceContent.Load<Texture2D>("AppIcon");
+```
+
+<Note>
+`ResourceContentManager` is most useful for tools, editors, or library-only projects that cannot rely on a file-system layout. For normal games, prefer the standard `ContentManager` with a `RootDirectory`.
+</Note>
+
+---
+
+## TitleContainer (Static)
+
+`TitleContainer` provides raw file access relative to the game's executable directory, bypassing the content pipeline entirely. Use it to read configuration files, mods, or any binary asset that does not need XNB deserialization.
+
+**Namespace:** `Microsoft.Xna.Framework`
+
+| Signature | Returns | Description |
+|-----------|---------|-------------|
+| `TitleContainer.OpenStream(string name)` | `Stream` | Opens a file relative to the game's executable location. Throws if the file does not exist. |
+
+```csharp
+// Read a raw JSON config file
+using Stream stream = TitleContainer.OpenStream("settings.json");
+using var reader = new StreamReader(stream);
+string json = reader.ReadToEnd();
+```
+
+<Tip>
+`TitleContainer.OpenStream` works on all MonoGame platforms, including Android (where it reads from the APK's `assets/` folder) and iOS (where it reads from the app bundle). It is the safe cross-platform replacement for `File.OpenRead`.
+</Tip>

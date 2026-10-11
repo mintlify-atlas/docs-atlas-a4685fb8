@@ -1,0 +1,450 @@
+---
+title: "Gamepad and Controller Input in MonoGame"
+sidebarTitle: "Gamepad"
+description: "Read Xbox-compatible controller input in MonoGame using GamePad.GetState(). Covers buttons, thumbsticks, triggers, vibration, and dead zone handling."
+---
+
+MonoGame provides first-class support for Xbox-compatible gamepads (and many other XInput/SDL2 controllers) through the static `GamePad` class. Like keyboard and mouse, gamepad input is **polled** each frame — you call `GamePad.GetState(PlayerIndex)` to receive an immutable `GamePadState` snapshot, then compare it to the previous frame's snapshot to detect button transitions. Analog inputs such as thumbsticks and triggers return floating-point values, and vibration motors can be driven programmatically.
+
+## Querying Controller State
+
+### `GamePad.GetState`
+
+```csharp
+// Simplest overload — uses IndependentAxes dead zone by default
+GamePadState state = GamePad.GetState(PlayerIndex.One);
+
+// With explicit dead zone
+GamePadState state = GamePad.GetState(PlayerIndex.One, GamePadDeadZone.Circular);
+
+// With separate dead zones per stick
+GamePadState state = GamePad.GetState(
+    PlayerIndex.One,
+    GamePadDeadZone.Circular,       // left stick
+    GamePadDeadZone.IndependentAxes // right stick
+);
+```
+
+`PlayerIndex` values run from `PlayerIndex.One` through `PlayerIndex.Four`. You can also pass an `int` index (0-based) directly.
+
+### Maximum Controller Count
+
+```csharp
+int maxPads = GamePad.MaximumGamePadCount;
+```
+
+This is platform-dependent (typically 4 on Windows/Xbox, more on DesktopGL).
+
+### Checking Connection
+
+Always check `IsConnected` before reading analog values — a disconnected controller returns `GamePadState.Default` (all zeros):
+
+```csharp
+GamePadState state = GamePad.GetState(PlayerIndex.One);
+
+if (!state.IsConnected)
+{
+    // Fall back to keyboard or show "connect controller" prompt
+    return;
+}
+```
+
+---
+
+## Buttons
+
+`GamePadState.Buttons` is a `GamePadButtons` struct. Use `IsButtonDown(Buttons)` / `IsButtonUp(Buttons)` directly on `GamePadState`, or compare button state properties individually.
+
+### `IsButtonDown` / `IsButtonUp`
+
+```csharp
+if (state.IsButtonDown(Buttons.A))
+    _player.Jump();
+
+if (state.IsButtonDown(Buttons.RightShoulder))
+    _player.Aim();
+```
+
+You can combine multiple buttons using bitwise OR:
+
+```csharp
+// True only when BOTH LB and RB are held simultaneously
+if (state.IsButtonDown(Buttons.LeftShoulder | Buttons.RightShoulder))
+    ActivateUltimate();
+```
+
+### Detecting a Button Just Pressed This Frame
+
+Store the previous `GamePadState` and compare:
+
+```csharp
+GamePadState _prevPad, _currPad;
+
+protected override void Update(GameTime gameTime)
+{
+    _prevPad = _currPad;
+    _currPad = GamePad.GetState(PlayerIndex.One);
+
+    // Just pressed: down now, was up last frame
+    if (_currPad.IsButtonDown(Buttons.A) && _prevPad.IsButtonUp(Buttons.A))
+        _player.FireJustPressed();
+
+    // Held: both frames down
+    if (_currPad.IsButtonDown(Buttons.B) && _prevPad.IsButtonDown(Buttons.B))
+        _player.BlockHeld();
+
+    base.Update(gameTime);
+}
+```
+
+### Button Reference
+
+| `Buttons` Value | Controller Button |
+|---|---|
+| `Buttons.A` | A (bottom face) |
+| `Buttons.B` | B (right face) |
+| `Buttons.X` | X (left face) |
+| `Buttons.Y` | Y (top face) |
+| `Buttons.Start` | Start / Menu |
+| `Buttons.Back` | Back / View |
+| `Buttons.LeftShoulder` | LB (left bumper) |
+| `Buttons.RightShoulder` | RB (right bumper) |
+| `Buttons.LeftStick` | L3 (press left stick) |
+| `Buttons.RightStick` | R3 (press right stick) |
+| `Buttons.BigButton` | Guide / Xbox button |
+
+---
+
+## D-Pad
+
+`GamePadState.DPad` is a `GamePadDPad` struct. Each direction property returns a `ButtonState`:
+
+```csharp
+if (state.DPad.Up    == ButtonState.Pressed) SelectPreviousItem();
+if (state.DPad.Down  == ButtonState.Pressed) SelectNextItem();
+if (state.DPad.Left  == ButtonState.Pressed) NavigateLeft();
+if (state.DPad.Right == ButtonState.Pressed) NavigateRight();
+```
+
+<Tip>
+D-Pad directions also work with `IsButtonDown` using the `Buttons.DPadUp`, `Buttons.DPadDown`, `Buttons.DPadLeft`, and `Buttons.DPadRight` virtual button values, which is convenient when combining with face buttons.
+</Tip>
+
+---
+
+## Thumbsticks
+
+`GamePadState.ThumbSticks` is a `GamePadThumbSticks` struct. Each stick is a `Vector2` where X and Y are in the range **[-1, 1]**. Positive X = right, positive Y = up.
+
+```csharp
+Vector2 leftStick  = state.ThumbSticks.Left;
+Vector2 rightStick = state.ThumbSticks.Right;
+
+// Move player with left stick
+_player.Velocity = new Vector2(leftStick.X, -leftStick.Y) * MoveSpeed;
+
+// Aim reticle with right stick
+if (rightStick.LengthSquared() > 0.01f)
+    _player.AimDirection = rightStick;
+```
+
+<Note>
+`Vector2.Y` on `ThumbSticks.Left/Right` is already in game convention: positive means the stick is pushed **up**. Negate Y if your coordinate system treats down as positive (common in 2D screen-space).
+</Note>
+
+### Thumbstick Virtual Buttons
+
+The `Buttons` enum also includes virtual directional values for thumbstick zones, useful for rebindable controls:
+
+| Value | Meaning |
+|---|---|
+| `Buttons.LeftThumbstickLeft` | Left stick pushed left |
+| `Buttons.LeftThumbstickRight` | Left stick pushed right |
+| `Buttons.LeftThumbstickUp` | Left stick pushed up |
+| `Buttons.LeftThumbstickDown` | Left stick pushed down |
+| `Buttons.RightThumbstickLeft` | Right stick pushed left |
+| `Buttons.RightThumbstickRight` | Right stick pushed right |
+| `Buttons.RightThumbstickUp` | Right stick pushed up |
+| `Buttons.RightThumbstickDown` | Right stick pushed down |
+
+---
+
+## Triggers
+
+`GamePadState.Triggers` is a `GamePadTriggers` struct. Each trigger is a `float` in the range **[0, 1]** where `0.0` is fully released and `1.0` is fully depressed.
+
+```csharp
+float leftTrigger  = state.Triggers.Left;
+float rightTrigger = state.Triggers.Right;
+
+// Accelerate car with right trigger
+_car.Throttle = rightTrigger;
+
+// Brake with left trigger
+_car.Brake = leftTrigger;
+
+// Treat as a digital button with a threshold
+bool shooting = rightTrigger > 0.5f;
+```
+
+<Tip>
+Triggers also map to the virtual button values `Buttons.LeftTrigger` and `Buttons.RightTrigger` when using `IsButtonDown`, which applies an internal threshold.
+</Tip>
+
+---
+
+## Dead Zones
+
+Real analog sticks never rest perfectly at `(0, 0)` — they drift slightly. Dead zones suppress small inputs below a threshold. MonoGame applies dead zones automatically based on the `GamePadDeadZone` mode you pass to `GetState`:
+
+<Tabs>
+  <Tab title="IndependentAxes (default)">
+    Each axis (X and Y) is tested against the threshold independently. Good for most scenarios and used by default when calling `GamePad.GetState(PlayerIndex)`.
+
+    ```csharp
+    var state = GamePad.GetState(PlayerIndex.One, GamePadDeadZone.IndependentAxes);
+    ```
+  </Tab>
+  <Tab title="Circular">
+    The stick magnitude (length of the `Vector2`) is tested against the threshold. Produces a more natural circular dead zone, recommended for twin-stick shooters and 3D cameras.
+
+    ```csharp
+    var state = GamePad.GetState(PlayerIndex.One, GamePadDeadZone.Circular);
+    ```
+  </Tab>
+  <Tab title="None">
+    No dead zone applied — raw hardware values. Use this if you want to implement your own custom dead zone logic.
+
+    ```csharp
+    var state = GamePad.GetState(PlayerIndex.One, GamePadDeadZone.None);
+
+    // Custom radial dead zone
+    const float DeadZoneRadius = 0.15f;
+    Vector2 raw = state.ThumbSticks.Left;
+    Vector2 adjusted = raw.Length() < DeadZoneRadius
+        ? Vector2.Zero
+        : raw;
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## Vibration
+
+`GamePad.SetVibration` drives the rumble motors. Values are in the range **[0.0, 1.0]**; values outside this range are clamped automatically.
+
+```csharp
+// Both motors at full
+GamePad.SetVibration(PlayerIndex.One, 1.0f, 1.0f);
+
+// Low rumble: only the low-frequency left motor
+GamePad.SetVibration(PlayerIndex.One, 0.4f, 0.0f);
+
+// Stop all vibration
+GamePad.SetVibration(PlayerIndex.One, 0f, 0f);
+```
+
+The **left motor** is low-frequency (heavy rumble); the **right motor** is high-frequency (fine buzz). Drive them independently for nuanced feedback.
+
+For Xbox One controllers you can also vibrate the triggers:
+
+```csharp
+// Trigger vibration (Xbox One controllers only)
+GamePad.SetVibration(
+    PlayerIndex.One,
+    leftMotor:    0.3f,
+    rightMotor:   0.3f,
+    leftTrigger:  0.8f,  // haptic in left trigger
+    rightTrigger: 0.8f   // haptic in right trigger
+);
+```
+
+`SetVibration` returns `true` if vibration was successfully set, `false` if the controller doesn't support it.
+
+<Warning>
+Always stop vibration when the player pauses, quits, or the window loses focus. Vibration does not stop automatically when gameplay stops.
+</Warning>
+
+---
+
+## Querying Controller Capabilities
+
+Before accessing hardware features, query `GamePad.GetCapabilities` to avoid reading unsupported inputs:
+
+```csharp
+GamePadCapabilities caps = GamePad.GetCapabilities(PlayerIndex.One);
+
+if (!caps.IsConnected) return;
+
+Console.WriteLine($"Controller: {caps.DisplayName}");
+
+if (caps.HasLeftXThumbStick && caps.HasLeftYThumbStick)
+    ReadLeftStick();
+
+if (caps.HasRightVibrationMotor)
+    TriggerRumble();
+
+if (caps.HasLeftTrigger)
+    ReadTriggers();
+```
+
+Key capability properties:
+
+| Property | Meaning |
+|---|---|
+| `IsConnected` | Whether a controller is connected |
+| `DisplayName` | Human-readable controller name |
+| `HasAButton`, `HasBButton`, `HasXButton`, `HasYButton` | Face buttons |
+| `HasLeftXThumbStick` / `HasLeftYThumbStick` | Left analog stick axes |
+| `HasRightXThumbStick` / `HasRightYThumbStick` | Right analog stick axes |
+| `HasLeftTrigger` / `HasRightTrigger` | Analog triggers |
+| `HasLeftVibrationMotor` / `HasRightVibrationMotor` | Rumble motors |
+| `HasLeftShoulderButton` / `HasRightShoulderButton` | Shoulder buttons |
+| `HasBigButton` | Guide/Xbox button |
+
+---
+
+## Full Example: Twin-Stick Shooter Controls
+
+This example moves the player with the left stick, aims with the right stick, fires on the A button (single press), and triggers a rumble hit reaction:
+
+```csharp
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Input;
+
+public class GamepadDemoGame : Game
+{
+    // Player state
+    private Vector2 _playerPosition = new Vector2(400, 300);
+    private Vector2 _aimDirection   = Vector2.UnitX;
+    private float   _rumbleTimer    = 0f;
+
+    // Input state
+    private GamePadState _prevPad;
+    private GamePadState _currPad;
+
+    private const float MoveSpeed    = 200f;  // pixels/second
+    private const float RumbleDuration = 0.2f; // seconds
+
+    protected override void Update(GameTime gameTime)
+    {
+        float dt = (float)gameTime.ElapsedGameTime.TotalSeconds;
+
+        // --- Snapshot gamepad state ---
+        _prevPad = _currPad;
+        _currPad = GamePad.GetState(PlayerIndex.One, GamePadDeadZone.Circular);
+
+        if (!_currPad.IsConnected)
+        {
+            // Could fall back to keyboard here
+            base.Update(gameTime);
+            return;
+        }
+
+        // --- Left stick: movement ---
+        Vector2 move = _currPad.ThumbSticks.Left;
+        _playerPosition += new Vector2(move.X, -move.Y) * MoveSpeed * dt;
+
+        // Clamp to screen bounds
+        _playerPosition.X = MathHelper.Clamp(_playerPosition.X, 0, 800);
+        _playerPosition.Y = MathHelper.Clamp(_playerPosition.Y, 0, 600);
+
+        // --- Right stick: aim direction ---
+        Vector2 aim = _currPad.ThumbSticks.Right;
+        if (aim.LengthSquared() > 0.1f)
+            _aimDirection = Vector2.Normalize(aim);
+
+        // --- Right trigger: continuous fire (held) ---
+        if (_currPad.Triggers.Right > 0.5f)
+            SpawnBullet(_playerPosition, _aimDirection);
+
+        // --- A button: single-shot fire (just pressed) ---
+        bool aJustPressed =
+            _currPad.IsButtonDown(Buttons.A) &&
+            _prevPad.IsButtonUp(Buttons.A);
+
+        if (aJustPressed)
+        {
+            SpawnSpecialAttack(_playerPosition, _aimDirection);
+            TriggerHitRumble();
+        }
+
+        // --- D-Pad: cycle weapon ---
+        bool dPadRightPressed =
+            _currPad.DPad.Right == ButtonState.Pressed &&
+            _prevPad.DPad.Right == ButtonState.Released;
+
+        if (dPadRightPressed) CycleWeaponNext();
+
+        bool dPadLeftPressed =
+            _currPad.DPad.Left == ButtonState.Pressed &&
+            _prevPad.DPad.Left == ButtonState.Released;
+
+        if (dPadLeftPressed) CycleWeaponPrev();
+
+        // --- Back button: pause ---
+        if (_currPad.IsButtonDown(Buttons.Back))
+            PauseGame();
+
+        // --- Rumble timer ---
+        if (_rumbleTimer > 0f)
+        {
+            _rumbleTimer -= dt;
+            if (_rumbleTimer <= 0f)
+                GamePad.SetVibration(PlayerIndex.One, 0f, 0f); // stop
+        }
+
+        base.Update(gameTime);
+    }
+
+    private void TriggerHitRumble()
+    {
+        // Strong short burst: left (low-freq) heavy, right (high-freq) light
+        GamePad.SetVibration(PlayerIndex.One, 0.8f, 0.3f);
+        _rumbleTimer = RumbleDuration;
+    }
+
+    private void SpawnBullet(Vector2 origin, Vector2 direction) { /* ... */ }
+    private void SpawnSpecialAttack(Vector2 origin, Vector2 direction) { /* ... */ }
+    private void CycleWeaponNext() { /* ... */ }
+    private void CycleWeaponPrev() { /* ... */ }
+    private void PauseGame() { /* ... */ }
+
+    protected override void Draw(GameTime gameTime)
+    {
+        GraphicsDevice.Clear(Color.Black);
+        // Draw player at _playerPosition, aim reticle along _aimDirection ...
+        base.Draw(gameTime);
+    }
+}
+```
+
+---
+
+## Quick Reference
+
+<CardGroup cols={2}>
+  <Card title="State Query">
+    `GamePad.GetState(PlayerIndex)` → `GamePadState`  
+    `.IsConnected` — always check first  
+    `.IsButtonDown(Buttons)` — held  
+    `.IsButtonUp(Buttons)` — not held  
+    `GamePad.MaximumGamePadCount`
+  </Card>
+  <Card title="Analog Inputs">
+    `.ThumbSticks.Left` / `.Right` → `Vector2` [-1, 1]  
+    `.Triggers.Left` / `.Right` → `float` [0, 1]  
+    `.DPad.Up/Down/Left/Right` → `ButtonState`
+  </Card>
+  <Card title="Vibration">
+    `GamePad.SetVibration(index, leftMotor, rightMotor)`  
+    `GamePad.SetVibration(index, left, right, leftTrigger, rightTrigger)`  
+    Range: 0.0 – 1.0; clamped automatically
+  </Card>
+  <Card title="Dead Zones">
+    `GamePadDeadZone.IndependentAxes` (default)  
+    `GamePadDeadZone.Circular` — natural feel  
+    `GamePadDeadZone.None` — raw values
+  </Card>
+</CardGroup>

@@ -1,0 +1,155 @@
+{
+  "projectType": "framework",
+  "projectName": "MonoGame",
+  "projectDescription": "An open-source, cross-platform .NET framework for building 2D and 3D games targeting Windows, Linux, macOS, Android, iOS, and consoles using C#.",
+  "theme": "maple",
+  "primaryColor": "#ec3b04",
+  "lightColor": "#f49c7c",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Getting Started",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "introduction",
+              "getting-started/platforms",
+              "getting-started/installation"
+            ]
+          },
+          {
+            "group": "Your First Game",
+            "pages": [
+              "getting-started/project-setup",
+              "getting-started/game-loop",
+              "getting-started/content-pipeline"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/game-class",
+              "concepts/game-components",
+              "concepts/content-management",
+              "concepts/graphics-device"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Guides",
+        "groups": [
+          {
+            "group": "2D Graphics",
+            "pages": [
+              "guides/2d/spritebatch",
+              "guides/2d/textures",
+              "guides/2d/spritefont"
+            ]
+          },
+          {
+            "group": "3D Graphics",
+            "pages": [
+              "guides/3d/models",
+              "guides/3d/effects",
+              "guides/3d/cameras"
+            ]
+          },
+          {
+            "group": "Input & Audio",
+            "pages": [
+              "guides/input/keyboard-mouse",
+              "guides/input/gamepad",
+              "guides/audio/sound-effects",
+              "guides/audio/media-player"
+            ]
+          },
+          {
+            "group": "Tools",
+            "pages": [
+              "guides/tools/mgcb",
+              "guides/tools/mgcb-editor",
+              "guides/tools/mgfxc"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Framework",
+            "pages": [
+              "api/game",
+              "api/game-components",
+              "api/math"
+            ]
+          },
+          {
+            "group": "Graphics",
+            "pages": [
+              "api/graphics-device",
+              "api/spritebatch",
+              "api/effects",
+              "api/textures"
+            ]
+          },
+          {
+            "group": "Input & Audio",
+            "pages": [
+              "api/input",
+              "api/audio",
+              "api/media"
+            ]
+          },
+          {
+            "group": "Content Pipeline",
+            "pages": [
+              "api/content-manager",
+              "api/content-pipeline"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Cross-platform targeting: Windows, Linux, macOS, iOS, Android, and consoles",
+    "XNA-compatible API preserving Microsoft's discontinued XNA Framework",
+    "SpriteBatch for efficient 2D sprite and text rendering",
+    "3D model rendering with built-in effects (BasicEffect, SkinnedEffect, EnvironmentMapEffect)",
+    "Content Pipeline (MGCB) for compiling and optimizing game assets",
+    "Full audio support: sound effects, music, and XACT audio projects",
+    "Comprehensive input handling: keyboard, mouse, gamepad, touch, and joystick",
+    "Custom shader support via HLSL and mgfxc effect compiler",
+    "GameComponent system for modular game architecture",
+    "Media playback for video and music"
+  ],
+  "publicApiSurface": [
+    "Game (base class with Initialize, LoadContent, Update, Draw lifecycle)",
+    "GraphicsDeviceManager (display settings, fullscreen, resolution)",
+    "GraphicsDevice (rendering pipeline, render targets, clear, present)",
+    "SpriteBatch (Begin/Draw/End for 2D sprites and text)",
+    "Texture2D, Texture3D, TextureCube (texture resource types)",
+    "SpriteFont (text rendering)",
+    "Model, ModelMesh, ModelBone (3D model classes)",
+    "Effect, BasicEffect, SkinnedEffect, EnvironmentMapEffect, DualTextureEffect, AlphaTestEffect",
+    "Keyboard, Mouse, GamePad, Joystick, TouchPanel (input classes)",
+    "SoundEffect, SoundEffectInstance, DynamicSoundEffectInstance (audio playback)",
+    "MediaPlayer, Song, Video, VideoPlayer (media playback)",
+    "ContentManager (runtime asset loading)",
+    "Vector2, Vector3, Vector4, Matrix, Quaternion, Color (math types)",
+    "MathHelper (Lerp, Clamp, SmoothStep, ToDegrees, ToRadians, etc.)",
+    "BoundingBox, BoundingSphere, BoundingFrustum, Ray, Plane (geometry)",
+    "Rectangle, Point (2D geometric types)",
+    "RenderTarget2D, RenderTargetCube (render target types)",
+    "GameComponent, DrawableGameComponent (component interfaces)",
+    "GameServiceContainer (service locator for game services)",
+    "TitleContainer (platform-agnostic file access)",
+    "mgcb (command-line content build tool)",
+    "mgcb-editor (GUI content pipeline editor)",
+    "mgfxc (HLSL effect compiler)"
+  ]
+}

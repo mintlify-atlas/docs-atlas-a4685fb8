@@ -1,0 +1,344 @@
+---
+title: "Effect, BasicEffect, and Built-in Shaders API Reference"
+sidebarTitle: "Effects"
+description: "API reference for MonoGame's Effect class and built-in effects: BasicEffect, SkinnedEffect, EnvironmentMapEffect, DualTextureEffect, and AlphaTestEffect."
+---
+
+MonoGame's effect system wraps compiled GPU shader programs. The base `Effect` class exposes shader parameters (uniforms) and technique/pass enumeration. Five built-in effects cover the most common 3D rendering scenarios without requiring custom HLSL.
+
+```csharp
+var effect = new BasicEffect(GraphicsDevice);
+effect.World      = Matrix.Identity;
+effect.View       = Matrix.CreateLookAt(new Vector3(0, 5, 10), Vector3.Zero, Vector3.Up);
+effect.Projection = Matrix.CreatePerspectiveFieldOfView(MathHelper.PiOver4, aspectRatio, 0.1f, 100f);
+effect.TextureEnabled = true;
+effect.Texture    = myTexture;
+
+foreach (var pass in effect.CurrentTechnique.Passes)
+{
+    pass.Apply();
+    GraphicsDevice.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, indexCount);
+}
+```
+
+## Namespace
+
+```
+Microsoft.Xna.Framework.Graphics
+```
+
+---
+
+## Effect (base class)
+
+`Effect` is the abstract base for all shader effects. It inherits from `GraphicsResource`.
+
+### Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `Parameters` | `EffectParameterCollection` | Named collection of shader uniform parameters. Indexed by name (`Parameters["World"]`) or by index. |
+| `Techniques` | `EffectTechniqueCollection` | All techniques compiled into this effect. Indexed by name or zero-based index. |
+| `CurrentTechnique` | `EffectTechnique` | The active technique. Set this to switch rendering paths. |
+| `GraphicsDevice` | `GraphicsDevice` | The owning graphics device. |
+| `IsDisposed` | `bool` | `true` after `Dispose()`. |
+
+### Methods
+
+| Method | Description |
+|---|---|
+| `Effect Clone()` | Creates a deep copy of the effect with independent parameter values. |
+| `void Dispose()` | Releases GPU resources. |
+
+---
+
+## EffectParameter
+
+Represents a single shader uniform variable. Accessed via `effect.Parameters["paramName"]`.
+
+### SetValue Overloads
+
+```csharp
+void SetValue(bool value)
+void SetValue(int value)
+void SetValue(float value)
+void SetValue(float[] values)
+void SetValue(Vector2 value)
+void SetValue(Vector3 value)
+void SetValue(Vector4 value)
+void SetValue(Matrix value)
+void SetValue(Matrix[] values)
+void SetValue(Texture2D value)
+void SetValue(TextureCube value)
+void SetValue(Quaternion value)
+```
+
+### GetValue Overloads
+
+```csharp
+bool         GetValueBoolean()
+int          GetValueInt32()
+float        GetValueSingle()
+float[]      GetValueSingleArray(int count)
+Vector2      GetValueVector2()
+Vector3      GetValueVector3()
+Vector4      GetValueVector4()
+Matrix       GetValueMatrix()
+Matrix[]     GetValueMatrixArray(int count)
+Texture2D    GetValueTexture2D()
+TextureCube  GetValueTextureCube()
+Quaternion   GetValueQuaternion()
+```
+
+---
+
+## EffectTechnique
+
+A named rendering technique within an effect.
+
+| Member | Type | Description |
+|---|---|---|
+| `Name` | `string` | Technique name as declared in the shader source. |
+| `Passes` | `EffectPassCollection` | Ordered collection of rendering passes. |
+
+---
+
+## EffectPass
+
+One rendering pass in a technique. Calling `Apply()` configures the GPU pipeline with this pass's shaders.
+
+| Member | Type | Description |
+|---|---|---|
+| `Name` | `string` | Pass name. |
+| `Apply()` | method | Binds vertex and pixel shaders to the pipeline. Must be called before each draw call. |
+
+---
+
+## BasicEffect
+
+`BasicEffect` supports optional texturing, per-vertex color, fog, and up to three directional lights. It is the most commonly used built-in effect. Implements `IEffectMatrices`, `IEffectLights`, `IEffectFog`.
+
+### Constructor
+
+```csharp
+public BasicEffect(GraphicsDevice device)
+```
+
+Default state: `DirectionalLight0` enabled, `SpecularColor = Vector3.One`, `SpecularPower = 16`.
+
+### Transform Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `World` | `Matrix` | World-space transform. Marks WorldViewProj and fog dirty on set. |
+| `View` | `Matrix` | View (camera) matrix. Marks WorldViewProj, EyePosition, and fog dirty. |
+| `Projection` | `Matrix` | Projection matrix. Marks WorldViewProj dirty. |
+
+### Material Properties
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `DiffuseColor` | `Vector3` | `(1,1,1)` | Material diffuse color (RGB, range 0–1). |
+| `EmissiveColor` | `Vector3` | `(0,0,0)` | Self-illumination color. |
+| `SpecularColor` | `Vector3` | `(1,1,1)` | Specular highlight color. |
+| `SpecularPower` | `float` | `16` | Shininess exponent. Higher = tighter highlights. |
+| `Alpha` | `float` | `1` | Material opacity (0 = transparent, 1 = opaque). Combined with diffuse. |
+
+### Lighting Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `LightingEnabled` | `bool` | Enables per-vertex or per-pixel lighting. When `false`, only `DiffuseColor` is used. |
+| `AmbientLightColor` | `Vector3` | Global ambient light color. |
+| `DirectionalLight0` | `DirectionalLight` | First directional light. Enabled by default. |
+| `DirectionalLight1` | `DirectionalLight` | Second directional light. |
+| `DirectionalLight2` | `DirectionalLight` | Third directional light. |
+| `PreferPerPixelLighting` | `bool` | When `true` (and `LightingEnabled`), uses per-pixel shading for smoother results (more expensive). |
+
+### Texture Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `TextureEnabled` | `bool` | When `true`, the `Texture` is multiplied with the material color. |
+| `Texture` | `Texture2D` | The diffuse texture to apply. |
+| `VertexColorEnabled` | `bool` | When `true`, per-vertex colors (from the vertex buffer) are factored in. |
+
+### Fog Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `FogEnabled` | `bool` | Enables linear distance fog. |
+| `FogStart` | `float` | Distance at which fog begins. |
+| `FogEnd` | `float` | Distance at which fog is fully opaque. |
+| `FogColor` | `Vector3` | Fog color (RGB). |
+
+### Methods
+
+| Method | Description |
+|---|---|
+| `void EnableDefaultLighting()` | Sets up a standard three-point key/fill/back light rig and enables lighting. Convenience for quick results. |
+| `Effect Clone()` | Creates an independent copy. |
+
+### Example
+
+```csharp
+var effect = new BasicEffect(GraphicsDevice)
+{
+    World      = Matrix.Identity,
+    View       = Matrix.CreateLookAt(eyePos, Vector3.Zero, Vector3.Up),
+    Projection = Matrix.CreatePerspectiveFieldOfView(MathHelper.ToRadians(45), aspect, 0.1f, 100f),
+    TextureEnabled = true,
+    Texture    = diffuseMap
+};
+effect.EnableDefaultLighting();
+
+foreach (var pass in effect.CurrentTechnique.Passes)
+{
+    pass.Apply();
+    GraphicsDevice.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, triCount);
+}
+```
+
+---
+
+## SkinnedEffect
+
+`SkinnedEffect` extends `BasicEffect` with GPU skeletal animation via bone transform matrices. Implements `IEffectMatrices`, `IEffectLights`, `IEffectFog`, `IEffectBones`.
+
+<Note>
+`SkinnedEffect` always has lighting enabled. Setting `LightingEnabled = false` throws `NotSupportedException`.
+</Note>
+
+### Constructor
+
+```csharp
+public SkinnedEffect(GraphicsDevice device)
+```
+
+### Unique Members
+
+| Member | Type | Description |
+|---|---|---|
+| `MaxBones` | `const int = 72` | Maximum number of simultaneous bone transforms. |
+| `WeightsPerVertex` | `int` | Number of bone influences per vertex: `1`, `2`, or `4`. Default `4`. Changing this selects a different shader variant. |
+| `SetBoneTransforms(Matrix[])` | method | Uploads an array of up to `MaxBones` world-space bone matrices to the GPU. Throws if array is null or exceeds `MaxBones`. |
+| `GetBoneTransforms(int count)` | method | Reads back the current bone transforms from the GPU parameter (converted from 4×3 to 4×4 format). |
+
+### Shared Properties
+
+`SkinnedEffect` exposes the same `World`, `View`, `Projection`, `DiffuseColor`, `EmissiveColor`, `SpecularColor`, `SpecularPower`, `Alpha`, `AmbientLightColor`, `DirectionalLight0/1/2`, `PreferPerPixelLighting`, `FogEnabled`, `FogStart`, `FogEnd`, `FogColor`, `Texture` properties as `BasicEffect`.
+
+---
+
+## EnvironmentMapEffect
+
+`EnvironmentMapEffect` combines a diffuse texture with a cube-map environment reflection using optional Fresnel and specular effects. Implements `IEffectMatrices`, `IEffectLights`, `IEffectFog`.
+
+<Note>
+Lighting is always enabled. Setting `LightingEnabled = false` throws `NotSupportedException`.
+</Note>
+
+### Constructor
+
+```csharp
+public EnvironmentMapEffect(GraphicsDevice device)
+```
+
+Defaults: `EnvironmentMapAmount = 1`, `EnvironmentMapSpecular = Vector3.Zero`, `FresnelFactor = 1`.
+
+### Unique Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `Texture` | `Texture2D` | The base (diffuse) texture. |
+| `EnvironmentMap` | `TextureCube` | The cube-map texture used for reflections. |
+| `EnvironmentMapAmount` | `float` | Blend factor `[0, 1]` for the environment map RGB contribution. `0` = no reflection. |
+| `EnvironmentMapSpecular` | `Vector3` | Specular highlight color sourced from the environment map's alpha channel. Set to `Vector3.Zero` to disable. |
+| `FresnelFactor` | `float` | Controls view-angle-dependent reflection intensity. `0` = uniform reflection, `1` = strongest at silhouette edges (default). Setting to `0` disables the Fresnel shader path. |
+
+Shares `World`, `View`, `Projection`, `DiffuseColor`, `EmissiveColor`, `Alpha`, `AmbientLightColor`, `DirectionalLight0/1/2`, and fog properties with `BasicEffect`.
+
+---
+
+## DualTextureEffect
+
+`DualTextureEffect` blends two textures using multiplicative compositing. Useful for lightmaps, detail textures, and terrain blending. Implements `IEffectMatrices`, `IEffectFog`.
+
+### Constructor
+
+```csharp
+public DualTextureEffect(GraphicsDevice device)
+```
+
+### Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `World` | `Matrix` | World-space transform. |
+| `View` | `Matrix` | View matrix. |
+| `Projection` | `Matrix` | Projection matrix. |
+| `Texture` | `Texture2D` | The primary (base) texture. |
+| `Texture2` | `Texture2D` | The secondary (overlay) texture. |
+| `DiffuseColor` | `Vector3` | Material diffuse tint. |
+| `Alpha` | `float` | Overall alpha (0–1). |
+| `VertexColorEnabled` | `bool` | Enables per-vertex color modulation. |
+| `FogEnabled` | `bool` | Linear depth fog. |
+| `FogStart` | `float` | Distance at which fog starts. |
+| `FogEnd` | `float` | Distance at which fog is fully opaque. |
+| `FogColor` | `Vector3` | Fog color. |
+
+---
+
+## AlphaTestEffect
+
+`AlphaTestEffect` uses a CPU-configurable alpha test (`CompareFunction` + `ReferenceAlpha`) to discard pixels, enabling efficient rendering of fully transparent cut-outs (foliage, fences, particle sprites) without alpha blending. Implements `IEffectMatrices`, `IEffectFog`.
+
+### Constructor
+
+```csharp
+public AlphaTestEffect(GraphicsDevice device)
+```
+
+### Properties
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `World` | `Matrix` | `Identity` | World-space transform. |
+| `View` | `Matrix` | `Identity` | View matrix. |
+| `Projection` | `Matrix` | `Identity` | Projection matrix. |
+| `Texture` | `Texture2D` | — | The texture to sample. |
+| `DiffuseColor` | `Vector3` | `(1,1,1)` | Color multiplier. |
+| `Alpha` | `float` | `1` | Alpha multiplier. |
+| `AlphaFunction` | `CompareFunction` | `Greater` | The comparison applied to each texel's alpha. |
+| `ReferenceAlpha` | `int` | `0` | The 8-bit `[0, 255]` reference value compared against the texel alpha. |
+| `VertexColorEnabled` | `bool` | `false` | Enables per-vertex color modulation. |
+| `FogEnabled` | `bool` | `false` | Enables linear fog. |
+| `FogStart`, `FogEnd` | `float` | `0`, `1` | Fog extents. |
+| `FogColor` | `Vector3` | — | Fog color. |
+
+`CompareFunction` values: `Always`, `Never`, `Less`, `LessEqual`, `Equal`, `GreaterEqual`, `Greater`, `NotEqual`.
+
+### Example
+
+```csharp
+// Draw a fence sprite with hard cut-out alpha
+var alphaEffect = new AlphaTestEffect(GraphicsDevice)
+{
+    AlphaFunction  = CompareFunction.Greater,
+    ReferenceAlpha = 128,   // discard pixels with alpha ≤ 128
+    World          = worldMatrix,
+    View           = viewMatrix,
+    Projection     = projMatrix,
+    Texture        = fenceTexture
+};
+
+foreach (var pass in alphaEffect.CurrentTechnique.Passes)
+{
+    pass.Apply();
+    GraphicsDevice.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, triCount);
+}
+```
+
+<Tip>
+Use `AlphaTestEffect` together with `DepthStencilState.Default` to correctly depth-sort cut-out geometry without the order-dependency problems of alpha blending.
+</Tip>

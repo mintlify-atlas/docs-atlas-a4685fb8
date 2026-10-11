@@ -1,0 +1,434 @@
+---
+title: "Math Types API Reference: Vector, Matrix, MathHelper"
+sidebarTitle: "Math"
+description: "API reference for MonoGame math types: Vector2, Vector3, Vector4, Matrix, Quaternion, MathHelper, Rectangle, Point, Color, and bounding geometry types."
+---
+
+MonoGame provides a rich set of value-type (`struct`) math primitives in the `Microsoft.Xna.Framework` namespace. All numeric types use single-precision (`float`) arithmetic. Many methods have both a return-by-value signature and an `out`-parameter overload for performance-critical inner loops.
+
+## Namespace
+
+```
+Microsoft.Xna.Framework
+```
+
+---
+
+## MathHelper
+
+`MathHelper` is a static utility class containing mathematical constants and helper functions.
+
+### Constants
+
+| Constant | Type | Value | Description |
+|---|---|---|---|
+| `Pi` | `float` | 3.14159274 | π (alias for `MathF.PI`). |
+| `PiOver2` | `float` | 1.57079637 | π / 2. |
+| `PiOver4` | `float` | 0.7853982 | π / 4. |
+| `TwoPi` | `float` | 6.28318548 | 2π. |
+| `Tau` | `float` | 6.28318548 | Alias for `TwoPi`. |
+| `E` | `float` | 2.71828175 | Euler's number (alias for `MathF.E`). |
+| `Log10E` | `float` | 0.4342945 | log₁₀(e). |
+| `Log2E` | `float` | 1.442695 | log₂(e). |
+
+### Methods
+
+| Method | Signature | Description |
+|---|---|---|
+| `Clamp` | `float Clamp(float value, float min, float max)` | Clamps `value` to `[min, max]`. Also has an `int` overload. |
+| `Lerp` | `float Lerp(float value1, float value2, float amount)` | Linear interpolation: `value1 + (value2 - value1) * amount`. |
+| `LerpPrecise` | `float LerpPrecise(float value1, float value2, float amount)` | Numerically stable Lerp: `(1 - amount) * value1 + value2 * amount`. Use when large magnitudes cause precision loss. |
+| `SmoothStep` | `float SmoothStep(float value1, float value2, float amount)` | Cubic (Hermite) interpolation between `value1` and `value2`. Clamps `amount` to `[0, 1]`. |
+| `Hermite` | `float Hermite(v1, t1, v2, t2, amount)` | Hermite spline interpolation using two positions and two tangents. |
+| `CatmullRom` | `float CatmullRom(v1, v2, v3, v4, amount)` | Catmull-Rom spline through four control points. |
+| `Barycentric` | `float Barycentric(v1, v2, v3, a1, a2)` | Cartesian coordinate from barycentric weights. |
+| `Distance` | `float Distance(float v1, float v2)` | Absolute difference `|v1 - v2|`. |
+| `Max` | `float Max(float v1, float v2)` | Greater of two values. Also has `int` overload. |
+| `Min` | `float Min(float v1, float v2)` | Lesser of two values. Also has `int` overload. |
+| `ToDegrees` | `float ToDegrees(float radians)` | Converts radians to degrees (×57.2957…). |
+| `ToRadians` | `float ToRadians(float degrees)` | Converts degrees to radians (×0.01745…). |
+| `WrapAngle` | `float WrapAngle(float angle)` | Reduces an angle in radians to `(-π, π]`. |
+| `IsPowerOfTwo` | `bool IsPowerOfTwo(int value)` | Returns `true` if `value > 0` and is an exact power of two. |
+
+---
+
+## Vector2
+
+A 2D vector (struct) used for 2D positions, directions, texture coordinates, and scale.
+
+### Static Properties
+
+| Property | Value | Description |
+|---|---|---|
+| `Zero` | `(0, 0)` | Additive identity. |
+| `One` | `(1, 1)` | Unit vector in all axes. |
+| `UnitX` | `(1, 0)` | Unit vector along the X axis. |
+| `UnitY` | `(0, 1)` | Unit vector along the Y axis. |
+
+### Constructors
+
+```csharp
+public Vector2(float x, float y)   // set X and Y individually
+public Vector2(float value)         // set both X and Y to the same value
+```
+
+### Instance Members
+
+| Member | Description |
+|---|---|
+| `float X` | X component. |
+| `float Y` | Y component. |
+| `float Length()` | Returns √(X² + Y²). |
+| `float LengthSquared()` | Returns X² + Y² (cheaper, no sqrt). |
+| `void Normalize()` | Scales this vector to unit length in place. |
+
+### Key Static Methods
+
+| Method | Signature | Description |
+|---|---|---|
+| `Add` | `Vector2 Add(Vector2 a, Vector2 b)` | Component-wise addition. |
+| `Subtract` | `Vector2 Subtract(Vector2 a, Vector2 b)` | Component-wise subtraction. |
+| `Multiply` | `Vector2 Multiply(Vector2 v, float s)` | Scalar multiplication. |
+| `Divide` | `Vector2 Divide(Vector2 v, float d)` | Scalar division. |
+| `Dot` | `float Dot(Vector2 a, Vector2 b)` | Dot product: aₓbₓ + a_yb_y. |
+| `Normalize` | `Vector2 Normalize(Vector2 v)` | Returns a unit-length copy. |
+| `Distance` | `float Distance(Vector2 a, Vector2 b)` | Euclidean distance. |
+| `DistanceSquared` | `float DistanceSquared(Vector2 a, Vector2 b)` | Squared distance (no sqrt). |
+| `Lerp` | `Vector2 Lerp(Vector2 a, Vector2 b, float t)` | Per-component linear interpolation. |
+| `Clamp` | `Vector2 Clamp(Vector2 v, Vector2 min, Vector2 max)` | Per-component clamp. |
+| `Reflect` | `Vector2 Reflect(Vector2 v, Vector2 n)` | Reflects `v` around normal `n`. |
+| `Min` | `Vector2 Min(Vector2 a, Vector2 b)` | Per-component minimum. |
+| `Max` | `Vector2 Max(Vector2 a, Vector2 b)` | Per-component maximum. |
+| `Transform` | `Vector2 Transform(Vector2 pos, Matrix m)` | Applies a 2D affine transform. |
+| `TransformNormal` | `Vector2 TransformNormal(Vector2 n, Matrix m)` | Applies the rotation/scale part of `m` only (ignores translation). |
+
+### Operators
+
+`+`, `-`, `*` (scalar), `/` (scalar), `==`, `!=`, unary `-`
+
+---
+
+## Vector3
+
+A 3D vector (struct) for positions, directions, normals, and colors.
+
+### Static Properties
+
+| Property | Value | Description |
+|---|---|---|
+| `Zero` | `(0, 0, 0)` | |
+| `One` | `(1, 1, 1)` | |
+| `UnitX` | `(1, 0, 0)` | |
+| `UnitY` | `(0, 1, 0)` | |
+| `UnitZ` | `(0, 0, 1)` | |
+| `Up` | `(0, 1, 0)` | World up. |
+| `Down` | `(0, -1, 0)` | World down. |
+| `Right` | `(1, 0, 0)` | |
+| `Left` | `(-1, 0, 0)` | |
+| `Forward` | `(0, 0, -1)` | Right-handed forward (-Z). |
+| `Backward` | `(0, 0, 1)` | Right-handed backward (+Z). |
+
+### Constructors
+
+```csharp
+public Vector3(float x, float y, float z)
+public Vector3(float value)              // all components equal
+public Vector3(Vector2 value, float z)   // promote a 2D vector
+```
+
+### Key Static Methods (beyond Vector2 equivalents)
+
+| Method | Description |
+|---|---|
+| `Cross(Vector3 a, Vector3 b)` | Cross product — returns a vector perpendicular to both `a` and `b`. |
+| `Dot(Vector3 a, Vector3 b)` | Dot product: aₓbₓ + a_yb_y + a_zb_z. |
+| `Normalize(Vector3 v)` | Returns a unit-length copy. |
+| `Reflect(Vector3 v, Vector3 n)` | Reflects `v` off surface with normal `n`. |
+| `Transform(Vector3 pos, Matrix m)` | Full 4×4 affine transform (position). |
+| `TransformNormal(Vector3 n, Matrix m)` | Applies only the rotation/scale part of `m`. |
+| `Transform(Vector3 v, Quaternion q)` | Rotates `v` by quaternion `q`. |
+
+---
+
+## Vector4
+
+A 4D vector (struct) for homogeneous coordinates, RGBA colors, and shader parameters.
+
+### Static Properties
+
+`Zero`, `One`, `UnitX (1,0,0,0)`, `UnitY (0,1,0,0)`, `UnitZ (0,0,1,0)`, `UnitW (0,0,0,1)`.
+
+### Constructors
+
+```csharp
+public Vector4(float x, float y, float z, float w)
+public Vector4(float value)
+public Vector4(Vector2 value, float z, float w)
+public Vector4(Vector3 value, float w)
+```
+
+Supports the same static methods as `Vector3` (`Dot`, `Lerp`, `Clamp`, `Normalize`, `Transform` with `Matrix` or `Quaternion`).
+
+---
+
+## Matrix
+
+A right-handed 4×4 floating-point matrix (struct) for 3D transforms, projection, and view matrices.
+
+### Static Properties
+
+| Property | Description |
+|---|---|
+| `Identity` | The 4×4 identity matrix. |
+
+### Matrix Elements
+
+Elements are named `M{row}{column}`, e.g., `M11`, `M12`, …, `M44`. The matrix also exposes named vector properties: `Translation`, `Right`, `Left`, `Up`, `Down`, `Forward`, `Backward`.
+
+### Factory Methods
+
+| Method | Signature | Description |
+|---|---|---|
+| `CreateTranslation` | `Matrix CreateTranslation(float x, float y, float z)` | Translation matrix. |
+| `CreateTranslation` | `Matrix CreateTranslation(Vector3 position)` | Translation from a vector. |
+| `CreateRotationX` | `Matrix CreateRotationX(float radians)` | Rotation around X axis. |
+| `CreateRotationY` | `Matrix CreateRotationY(float radians)` | Rotation around Y axis. |
+| `CreateRotationZ` | `Matrix CreateRotationZ(float radians)` | Rotation around Z axis. |
+| `CreateFromYawPitchRoll` | `Matrix CreateFromYawPitchRoll(float yaw, float pitch, float roll)` | Euler angles. |
+| `CreateFromAxisAngle` | `Matrix CreateFromAxisAngle(Vector3 axis, float angle)` | Arbitrary-axis rotation. |
+| `CreateFromQuaternion` | `Matrix CreateFromQuaternion(Quaternion q)` | From quaternion. |
+| `CreateScale` | `Matrix CreateScale(float sx, float sy, float sz)` | Non-uniform scale. |
+| `CreateScale` | `Matrix CreateScale(float scale)` | Uniform scale. |
+| `CreateLookAt` | `Matrix CreateLookAt(Vector3 pos, Vector3 target, Vector3 up)` | View matrix (right-handed). |
+| `CreatePerspectiveFieldOfView` | `Matrix CreatePerspectiveFieldOfView(float fovY, float aspect, float near, float far)` | Perspective projection. `far` may be `float.PositiveInfinity`. |
+| `CreateOrthographic` | `Matrix CreateOrthographic(float w, float h, float near, float far)` | Orthographic projection. |
+| `CreateOrthographicOffCenter` | `Matrix CreateOrthographicOffCenter(float l, float r, float b, float t, float near, float far)` | Off-center orthographic. |
+| `Invert` | `Matrix Invert(Matrix m)` | Matrix inverse. |
+| `Transpose` | `Matrix Transpose(Matrix m)` | Transposes rows and columns. |
+| `Multiply` | `Matrix Multiply(Matrix a, Matrix b)` | Matrix multiplication. |
+| `Lerp` | `Matrix Lerp(Matrix a, Matrix b, float t)` | Element-wise linear interpolation. |
+
+### Instance Methods
+
+| Method | Description |
+|---|---|
+| `float Determinant()` | Returns the 4×4 determinant. |
+| `bool Decompose(out Vector3 scale, out Quaternion rotation, out Vector3 translation)` | Decomposes the matrix into SRT components. Returns `false` if the matrix has zero-scale rows. |
+
+---
+
+## Quaternion
+
+A quaternion (struct) represents a 3D rotation more efficiently and robustly than Euler angles or 3×3 matrices.
+
+### Static Properties
+
+| Property | Description |
+|---|---|
+| `Identity` | `(0, 0, 0, 1)` — no rotation. |
+
+### Constructors
+
+```csharp
+public Quaternion(float x, float y, float z, float w)
+public Quaternion(Vector3 vectorPart, float scalarPart)
+public Quaternion(Vector4 value)
+```
+
+### Key Static Methods
+
+| Method | Description |
+|---|---|
+| `CreateFromAxisAngle(Vector3 axis, float angle)` | Rotation of `angle` radians around `axis`. |
+| `CreateFromYawPitchRoll(float yaw, float pitch, float roll)` | From Euler angles (yaw around Y, pitch around X, roll around Z). |
+| `CreateFromRotationMatrix(Matrix m)` | Extracts a quaternion from the rotation part of `m`. |
+| `Dot(Quaternion a, Quaternion b)` | Dot product. |
+| `Normalize(Quaternion q)` | Returns a unit quaternion. |
+| `Slerp(Quaternion a, Quaternion b, float t)` | Spherical linear interpolation — smooth rotation blend. |
+| `Lerp(Quaternion a, Quaternion b, float t)` | Normalised linear interpolation — faster but less uniform than Slerp. |
+| `Inverse(Quaternion q)` | Rotation inverse (opposite rotation). |
+| `Concatenate(Quaternion a, Quaternion b)` | Combines two rotations: `a` followed by `b`. Equivalent to `b * a` in matrix terms. |
+| `Conjugate(Quaternion q)` | Negates the X, Y, Z components. Equivalent to `Inverse` for unit quaternions. |
+
+### Example
+
+```csharp
+// Rotate an object 90° around the Y axis
+var rotation = Quaternion.CreateFromAxisAngle(Vector3.Up, MathHelper.PiOver2);
+var worldMatrix = Matrix.CreateFromQuaternion(rotation);
+```
+
+---
+
+## Rectangle
+
+An integer-coordinate axis-aligned rectangle (struct).
+
+### Constructor
+
+```csharp
+public Rectangle(int x, int y, int width, int height)
+```
+
+### Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `X`, `Y` | `int` | Top-left corner. |
+| `Width`, `Height` | `int` | Dimensions. |
+| `Left`, `Right` | `int` | X and X+Width. |
+| `Top`, `Bottom` | `int` | Y and Y+Height. |
+| `Center` | `Point` | Centre point `(X + Width/2, Y + Height/2)`. |
+| `IsEmpty` | `bool` | `true` when both `Width` and `Height` are zero. |
+
+### Key Methods
+
+| Method | Description |
+|---|---|
+| `Contains(Point p)` | Returns `true` if `p` is inside this rectangle. |
+| `Contains(Vector2 v)` | Floating-point containment test. |
+| `Contains(Rectangle r)` | Returns `true` if `r` is fully enclosed. |
+| `Intersects(Rectangle r)` | Returns `true` if the two rectangles overlap. |
+| `Inflate(int h, int v)` | Expands (or shrinks) the rectangle by `h` on each side horizontally and `v` vertically. |
+| `Offset(int x, int y)` | Moves the rectangle by `(x, y)`. |
+| `static Union(Rectangle a, Rectangle b)` | Returns the smallest rectangle that contains both. |
+| `static Intersect(Rectangle a, Rectangle b)` | Returns the intersection rectangle. |
+
+---
+
+## Color
+
+A 32-bit RGBA color (struct). Component values are bytes `[0, 255]` internally but are often set via floats `[0, 1]`.
+
+### Named Color Constants (static properties)
+
+```csharp
+Color.White        // (255, 255, 255, 255)
+Color.Black        // (0, 0, 0, 255)
+Color.Transparent  // (0, 0, 0, 0)
+Color.CornflowerBlue  // XNA classic background color
+Color.Red, Color.Green, Color.Blue
+// ...and many more (140+ XNA named colors)
+```
+
+### Constructors
+
+```csharp
+public Color(int r, int g, int b)              // alpha = 255
+public Color(int r, int g, int b, int a)
+public Color(float r, float g, float b, float a)
+public Color(Vector3 color)                    // alpha = 1
+public Color(Vector4 color)
+```
+
+### Key Methods
+
+| Method | Description |
+|---|---|
+| `ToVector4()` | Returns the color as a `Vector4(r/255, g/255, b/255, a/255)`. |
+| `static Lerp(Color a, Color b, float t)` | Per-channel linear interpolation. |
+| `static Multiply(Color color, float scale)` | Scales the RGB channels by `scale`. |
+
+---
+
+## Bounding Types
+
+### BoundingBox
+
+An axis-aligned bounding box (AABB) defined by two corner points.
+
+```csharp
+public struct BoundingBox
+{
+    public Vector3 Min;   // minimum corner
+    public Vector3 Max;   // maximum corner
+}
+```
+
+| Method | Description |
+|---|---|
+| `Contains(Vector3 point)` | Returns `ContainmentType`. |
+| `Contains(BoundingSphere s)` | Returns `ContainmentType` (Disjoint / Intersects / Contains). |
+| `Contains(BoundingBox b)` | |
+| `Intersects(BoundingBox b)` | Returns `bool`. |
+| `Intersects(BoundingSphere s)` | Returns `bool`. |
+| `static CreateFromPoints(IEnumerable<Vector3>)` | Builds the tightest-fitting AABB around a set of points. |
+| `static CreateMerged(BoundingBox a, BoundingBox b)` | Returns the union of two AABBs. |
+
+---
+
+### BoundingSphere
+
+A bounding sphere defined by a centre point and radius.
+
+```csharp
+public struct BoundingSphere
+{
+    public Vector3 Center;
+    public float   Radius;
+}
+```
+
+| Method | Description |
+|---|---|
+| `Contains(Vector3 point)` | Returns `ContainmentType`. |
+| `Contains(BoundingBox b)` | |
+| `Intersects(BoundingBox b)` | Returns `bool`. |
+| `Intersects(BoundingSphere s)` | Returns `bool`. |
+| `Intersects(Ray r)` | Returns `float?` — distance to intersection, or `null`. |
+| `Transform(Matrix m)` | Transforms the sphere by the scale/translation of `m`. |
+| `static CreateFromBoundingBox(BoundingBox b)` | Minimal enclosing sphere. |
+| `static CreateMerged(BoundingSphere a, BoundingSphere b)` | Combines two spheres. |
+
+---
+
+### BoundingFrustum
+
+Represents the six planes of a view frustum. Constructed from a combined view-projection matrix.
+
+```csharp
+public class BoundingFrustum
+{
+    public BoundingFrustum(Matrix viewProjection);
+    public Matrix Matrix { get; set; }  // updates planes when set
+
+    public Plane Near, Far, Left, Right, Top, Bottom;
+
+    public ContainmentType Contains(Vector3 point);
+    public ContainmentType Contains(BoundingSphere sphere);
+    public ContainmentType Contains(BoundingBox box);
+    public bool            Intersects(BoundingSphere sphere);
+    public bool            Intersects(BoundingBox box);
+}
+```
+
+Used for frustum culling: skip drawing objects where `Contains(boundingSphere) == ContainmentType.Disjoint`.
+
+---
+
+### Ray
+
+An infinite ray defined by an origin and a normalised direction.
+
+```csharp
+public struct Ray
+{
+    public Vector3 Position;   // origin
+    public Vector3 Direction;  // should be unit length
+
+    public float? Intersects(BoundingBox box);
+    public float? Intersects(BoundingSphere sphere);
+    public float? Intersects(Plane plane);
+    public float? Intersects(BoundingFrustum frustum);
+}
+```
+
+`Intersects` returns the distance along `Direction` to the hit point, or `null` if there is no intersection.
+
+```csharp
+// Pick test
+var ray = new Ray(cameraPos, Vector3.Normalize(mouseWorldDir));
+float? dist = ray.Intersects(myBoundingSphere);
+if (dist.HasValue)
+    Console.WriteLine($"Hit at distance {dist.Value}");
+```

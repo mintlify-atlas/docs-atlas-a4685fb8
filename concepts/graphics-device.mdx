@@ -1,0 +1,363 @@
+---
+title: "GraphicsDevice and GraphicsDeviceManager in MonoGame"
+sidebarTitle: "Graphics Device"
+description: "GraphicsDevice is MonoGame's core rendering interface. GraphicsDeviceManager configures it. Learn resolution, fullscreen, render targets, and presentation settings."
+---
+
+MonoGame separates the concerns of *configuring* the graphics device from *using* it. `GraphicsDeviceManager` acts as a configuration and lifecycle controller — you set your desired resolution, profile, and fullscreen mode on it, then call `ApplyChanges()` to commit. `GraphicsDevice` is the lower-level rendering API you interact with every frame: clearing the back buffer, setting render targets, managing viewports, and issuing draw calls. Understanding how these two classes relate is the first step toward effective rendering in MonoGame.
+
+---
+
+## `GraphicsDeviceManager` Setup
+
+Create exactly one `GraphicsDeviceManager` in the `Game` constructor. This registers it with `Game.Services` as both `IGraphicsDeviceManager` and `IGraphicsDeviceService`, which is what allows `Game.GraphicsDevice` to resolve.
+
+```csharp
+public class Game1 : Game
+{
+    private GraphicsDeviceManager _graphics;
+
+    public Game1()
+    {
+        _graphics = new GraphicsDeviceManager(this);
+        Content.RootDirectory = "Content";
+    }
+}
+```
+
+Changes made to `GraphicsDeviceManager` **before** `Run()` is called take effect during device creation. Changes made **after** `Run()` require an explicit call to `ApplyChanges()`.
+
+---
+
+## `GraphicsDeviceManager` Properties
+
+### Resolution
+
+```csharp
+_graphics.PreferredBackBufferWidth  = 1920;
+_graphics.PreferredBackBufferHeight = 1080;
+```
+
+The static defaults are `DefaultBackBufferWidth = 800` and `DefaultBackBufferHeight = 480`. The manager initialises to the window's `ClientBounds` size if those are larger than zero.
+
+### Fullscreen
+
+```csharp
+_graphics.IsFullScreen      = true;
+
+// "Hard" mode (true, default): OS-level exclusive fullscreen — maximum performance,
+// slower Alt+Tab. "Soft" mode (false): borderless window fullscreen — faster focus
+// changes, slightly lower performance.
+_graphics.HardwareModeSwitch = false;
+```
+
+### Multi-Sampling (MSAA)
+
+```csharp
+_graphics.PreferMultiSampling = true;
+// MonoGame requests the maximum supported sample count for the chosen back-buffer format.
+// Override the exact count via the PreparingDeviceSettings event.
+```
+
+### Vertical Sync
+
+```csharp
+_graphics.SynchronizeWithVerticalRetrace = true; // default: true (vsync on)
+```
+
+Pairs with `IsFixedTimeStep` on `Game`:
+
+```csharp
+// Uncapped frame rate (useful for benchmarking):
+_graphics.SynchronizeWithVerticalRetrace = false;
+IsFixedTimeStep = false;
+```
+
+### Graphics Profile
+
+```csharp
+_graphics.GraphicsProfile = GraphicsProfile.HiDef; // default: Reach
+```
+
+See [Reach vs HiDef](#reach-vs-hidef) below.
+
+### Half-Pixel Offset
+
+```csharp
+// Set BEFORE the device is created (cannot be changed afterwards):
+_graphics.PreferHalfPixelOffset = true; // XNA-compatible DX9 UV addressing
+```
+
+<Warning>
+  `PreferHalfPixelOffset` throws `InvalidOperationException` if you set it after `GraphicsDevice` has been created. Always set it in the `Game1` constructor.
+</Warning>
+
+### `ApplyChanges()`
+
+Any property change made at runtime (after the device exists) is buffered internally. Call `ApplyChanges()` to flush the buffer and reset the device:
+
+```csharp
+protected override void Update(GameTime gameTime)
+{
+    if (_resolutionChanged)
+    {
+        _graphics.PreferredBackBufferWidth  = _newWidth;
+        _graphics.PreferredBackBufferHeight = _newHeight;
+        _graphics.ApplyChanges(); // commits the new resolution
+        _resolutionChanged = false;
+    }
+    base.Update(gameTime);
+}
+```
+
+### `ToggleFullScreen()`
+
+Convenience method — flips `IsFullScreen` and calls `ApplyChanges()` in one call:
+
+```csharp
+if (Keyboard.GetState().IsKeyDown(Keys.F11))
+    _graphics.ToggleFullScreen();
+```
+
+---
+
+## `GraphicsDeviceManager` Events
+
+| Event | When fired |
+|---|---|
+| `DeviceCreated` | The `GraphicsDevice` has been created for the first time |
+| `DeviceReset` | The device was successfully reset (e.g., resolution change) |
+| `DeviceResetting` | The device is about to be reset — free resources that can't survive a reset |
+| `DeviceDisposing` | The device is about to be disposed |
+| `PreparingDeviceSettings` | Before the device is created or reset — override `PresentationParameters` here |
+
+```csharp
+_graphics.DeviceReset     += OnDeviceReset;
+_graphics.DeviceResetting += OnDeviceResetting;
+
+private void OnDeviceResetting(object sender, EventArgs e)
+{
+    // Release render targets, etc.
+}
+
+private void OnDeviceReset(object sender, EventArgs e)
+{
+    // Recreate render targets at the new resolution.
+    RecreateRenderTargets();
+}
+```
+
+---
+
+## `GraphicsDevice` Overview
+
+`GraphicsDevice` is obtained from `Game.GraphicsDevice` (or from a `DrawableGameComponent` via `this.GraphicsDevice`). It is the raw rendering interface.
+
+### Clearing the Back Buffer
+
+```csharp
+protected override void Draw(GameTime gameTime)
+{
+    GraphicsDevice.Clear(Color.CornflowerBlue);
+    // ... draw calls ...
+    base.Draw(gameTime);
+}
+```
+
+`Clear` accepts a `Color`, and overloads allow clearing specific buffers (color, depth, stencil) or clearing with `ClearOptions` flags.
+
+### `Present()`
+
+`Present()` flips the back buffer to the screen. You **do not** call it manually — `GraphicsDeviceManager.EndDraw()` calls it automatically at the end of every frame.
+
+### Viewport
+
+`Viewport` defines the region of the render target that draw calls map to:
+
+```csharp
+// Render to the left half of the screen (split-screen)
+GraphicsDevice.Viewport = new Viewport(
+    x: 0, y: 0,
+    width:  GraphicsDevice.PresentationParameters.BackBufferWidth / 2,
+    height: GraphicsDevice.PresentationParameters.BackBufferHeight);
+```
+
+Reset to full screen:
+
+```csharp
+GraphicsDevice.Viewport = new Viewport(
+    0, 0,
+    GraphicsDevice.PresentationParameters.BackBufferWidth,
+    GraphicsDevice.PresentationParameters.BackBufferHeight);
+```
+
+### Scissor Rectangle
+
+`ScissorRectangle` clips rendering to a pixel-perfect rectangle. Requires `RasterizerState.ScissorTestEnable = true`:
+
+```csharp
+var scissorState = new RasterizerState { ScissorTestEnable = true };
+GraphicsDevice.RasterizerState = scissorState;
+GraphicsDevice.ScissorRectangle = new Rectangle(100, 100, 400, 300);
+```
+
+### Render Targets
+
+`SetRenderTarget(RenderTarget2D)` redirects all subsequent draw calls to a texture instead of the back buffer. Pass `null` to restore the back buffer.
+
+```csharp
+// Render scene to texture
+GraphicsDevice.SetRenderTarget(_sceneTarget);
+GraphicsDevice.Clear(Color.Transparent);
+DrawScene(gameTime);
+
+// Restore back buffer, then display the texture (post-processed)
+GraphicsDevice.SetRenderTarget(null);
+GraphicsDevice.Clear(Color.Black);
+_spriteBatch.Begin(effect: _blurEffect);
+_spriteBatch.Draw(_sceneTarget, Vector2.Zero, Color.White);
+_spriteBatch.End();
+```
+
+### `GraphicsDevice` Events
+
+| Event | Description |
+|---|---|
+| `DeviceLost` | Device has been lost (e.g., Alt+Tab on some DX9 paths) |
+| `DeviceReset` | Device was reset — recreate render targets |
+| `DeviceResetting` | Device is about to be reset — release non-managed resources |
+| `Disposing` | Device is being disposed |
+
+---
+
+## Reach vs. HiDef
+
+<CardGroup cols={2}>
+  <Card title="GraphicsProfile.Reach" icon="mobile">
+    **Default.** Targets the broadest hardware compatibility including mobile and web. Shader Model 2.0. Texture sizes up to 2048×2048. No 3D texture support. Suitable for 2D games and simple 3D.
+  </Card>
+  <Card title="GraphicsProfile.HiDef" icon="desktop">
+    Requires dedicated GPU-class hardware. Shader Model 3.0+. Texture sizes up to 4096×4096 (or higher). Hardware instancing, floating-point render targets, MRT. Required for advanced 3D effects.
+  </Card>
+</CardGroup>
+
+```csharp
+// Set in Game1 constructor (before device creation):
+_graphics.GraphicsProfile = GraphicsProfile.HiDef;
+```
+
+---
+
+## Practical Examples
+
+### Setting 1920×1080 Fullscreen at Startup
+
+```csharp
+public Game1()
+{
+    _graphics = new GraphicsDeviceManager(this);
+    Content.RootDirectory = "Content";
+
+    _graphics.PreferredBackBufferWidth  = 1920;
+    _graphics.PreferredBackBufferHeight = 1080;
+    _graphics.IsFullScreen              = true;
+    _graphics.HardwareModeSwitch        = true;   // exclusive fullscreen
+    _graphics.SynchronizeWithVerticalRetrace = true;
+}
+```
+
+### Toggling Fullscreen at Runtime
+
+```csharp
+private KeyboardState _prevKeyboard;
+
+protected override void Update(GameTime gameTime)
+{
+    var kb = Keyboard.GetState();
+
+    if (kb.IsKeyDown(Keys.F11) && _prevKeyboard.IsKeyUp(Keys.F11))
+        _graphics.ToggleFullScreen(); // flips IsFullScreen + calls ApplyChanges()
+
+    _prevKeyboard = kb;
+    base.Update(gameTime);
+}
+```
+
+### Off-Screen Rendering with `RenderTarget2D`
+
+This pattern renders the scene to a texture, then applies a post-process effect when drawing to the screen.
+
+```csharp
+private RenderTarget2D _sceneTarget;
+private Effect         _postProcess;
+
+protected override void LoadContent()
+{
+    // Match the back buffer dimensions
+    int w = GraphicsDevice.PresentationParameters.BackBufferWidth;
+    int h = GraphicsDevice.PresentationParameters.BackBufferHeight;
+
+    _sceneTarget = new RenderTarget2D(GraphicsDevice, w, h);
+    _postProcess = Content.Load<Effect>("Shaders/vignette");
+
+    _spriteBatch = new SpriteBatch(GraphicsDevice);
+}
+
+protected override void Draw(GameTime gameTime)
+{
+    // --- Pass 1: Render scene to texture ---
+    GraphicsDevice.SetRenderTarget(_sceneTarget);
+    GraphicsDevice.Clear(Color.CornflowerBlue);
+
+    _spriteBatch.Begin();
+    DrawGameWorld();
+    _spriteBatch.End();
+
+    // --- Pass 2: Post-process to back buffer ---
+    GraphicsDevice.SetRenderTarget(null);
+    GraphicsDevice.Clear(Color.Black);
+
+    _spriteBatch.Begin(effect: _postProcess);
+    _spriteBatch.Draw(_sceneTarget, Vector2.Zero, Color.White);
+    _spriteBatch.End();
+
+    base.Draw(gameTime);
+}
+
+protected override void UnloadContent()
+{
+    _sceneTarget?.Dispose();
+}
+```
+
+<Warning>
+  `RenderTarget2D` is a GPU resource. Dispose it manually when it is no longer needed — it is **not** managed by `ContentManager`. Also recreate it in `DeviceReset` if the back buffer dimensions change.
+</Warning>
+
+### Handling Device Reset (Resolution Change)
+
+```csharp
+public Game1()
+{
+    _graphics = new GraphicsDeviceManager(this);
+    Content.RootDirectory = "Content";
+
+    _graphics.DeviceReset     += OnDeviceReset;
+    _graphics.DeviceResetting += OnDeviceResetting;
+}
+
+private void OnDeviceResetting(object sender, EventArgs e)
+{
+    // Dispose render targets before the device resets
+    _sceneTarget?.Dispose();
+    _sceneTarget = null;
+}
+
+private void OnDeviceReset(object sender, EventArgs e)
+{
+    // Recreate render targets at the new size
+    int w = GraphicsDevice.PresentationParameters.BackBufferWidth;
+    int h = GraphicsDevice.PresentationParameters.BackBufferHeight;
+    _sceneTarget = new RenderTarget2D(GraphicsDevice, w, h);
+}
+```

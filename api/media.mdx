@@ -1,0 +1,268 @@
+---
+title: "Media API Reference: MediaPlayer, Song, Video, VideoPlayer"
+sidebarTitle: "Media"
+description: "API reference for MonoGame media playback classes: MediaPlayer, Song, MediaQueue, Video, and VideoPlayer for music and video playback."
+---
+
+MonoGame's media layer, found in the `Microsoft.Xna.Framework.Media` namespace, provides high-level playback of background music and full-motion video. **MediaPlayer** is a static class that manages a song queue with shuffle, repeat, and volume controls. Individual songs are represented by **Song** objects and organized into a **MediaQueue**. For video, **VideoPlayer** is an instance class that decodes a **Video** asset and exposes each decoded frame as a `Texture2D`, allowing you to render it on any geometry. Platform support varies: video playback is most complete on Desktop and mobile targets, while some console platforms may have restrictions.
+
+<Note>
+Media playback on mobile and console platforms may be subject to OS-level audio routing. Check `MediaPlayer.GameHasControl` before issuing playback commands to avoid conflicts with the user's own music.
+</Note>
+
+---
+
+## MediaPlayer
+
+`MediaPlayer` is a static class providing background music playback with queue management.
+**Namespace:** `Microsoft.Xna.Framework.Media`
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `Volume` | `float` | Playback volume in `[0.0, 1.0]`. Volume is scaled on a decibel curve, not linearly. `0.0` applies −96 dB; `1.0` applies 0 dB. |
+| `IsMuted` | `bool` | `true` to silence playback without changing `Volume`. |
+| `IsRepeating` | `bool` | When `true`, the queue restarts after the last song finishes. |
+| `IsShuffled` | `bool` | When `true`, the next song is chosen at random rather than sequentially. |
+| `State` | `MediaState` | Current playback state: `Stopped`, `Playing`, or `Paused`. Read-only from user code. |
+| `PlayPosition` | `TimeSpan` | Elapsed time within the currently playing song. |
+| `Queue` | `MediaQueue` | The live song queue. Inspect `Queue.ActiveSong` for the currently playing track. |
+| `IsVisualizationEnabled` | `bool` | Always returns `false` in MonoGame (XNA compatibility stub). |
+| `GameHasControl` | `bool` | `false` when the user's own music is playing and the game should not override it. |
+
+### Methods
+
+| Signature | Returns | Description |
+|-----------|---------|-------------|
+| `Play(Song song)` | `void` | Clears the queue, enqueues `song`, and begins playback from the start. |
+| `Play(Song song, TimeSpan? startPosition)` | `void` | Same as above but starts at a specific position within the song. |
+| `Play(SongCollection collection, int index = 0)` | `void` | Clears the queue, enqueues all songs in `collection`, and begins at `index`. |
+| `Pause()` | `void` | Pauses the currently playing song. Has no effect if already paused or stopped. |
+| `Resume()` | `void` | Resumes a paused song. Has no effect if already playing. |
+| `Stop()` | `void` | Stops playback. Has no effect if already stopped. |
+| `MoveNext()` | `void` | Advances to the next song in the queue. Stays on the current song if at the end and `IsRepeating` is `false`. |
+| `MovePrevious()` | `void` | Returns to the previous song. Stays on the current song if at the beginning. |
+
+### Events
+
+| Event | Signature | Description |
+|-------|-----------|-------------|
+| `ActiveSongChanged` | `EventHandler<EventArgs>` | Raised when the currently playing song changes — whether by natural progression, `MoveNext()`, or `MovePrevious()`. |
+| `MediaStateChanged` | `EventHandler<EventArgs>` | Raised whenever `State` transitions between `Stopped`, `Playing`, and `Paused`. |
+
+### Example
+
+```csharp
+// Load and play a single song
+Song theme = Content.Load<Song>("Music/MainTheme");
+MediaPlayer.IsRepeating = true;
+MediaPlayer.Volume = 0.7f;
+MediaPlayer.Play(theme);
+
+// Respond to state changes
+MediaPlayer.MediaStateChanged += (s, e) =>
+{
+    if (MediaPlayer.State == MediaState.Stopped)
+        Console.WriteLine("Song ended.");
+};
+
+// Fade out over 2 seconds
+protected override void Update(GameTime gameTime)
+{
+    if (fadingOut)
+    {
+        MediaPlayer.Volume -= (float)gameTime.ElapsedGameTime.TotalSeconds * 0.5f;
+        if (MediaPlayer.Volume <= 0f)
+        {
+            MediaPlayer.Stop();
+            fadingOut = false;
+        }
+    }
+}
+```
+
+---
+
+## MediaState Enum
+
+Shared by `MediaPlayer` and `VideoPlayer`.
+
+| Value | Description |
+|-------|-------------|
+| `MediaState.Stopped` | No media is playing. |
+| `MediaState.Playing` | Media is actively playing. |
+| `MediaState.Paused` | Playback is paused; position is retained. |
+
+---
+
+## Song
+
+`Song` represents a music track that can be played by `MediaPlayer`. Songs loaded through the content pipeline reference a compiled `.xnb` asset; songs created with `FromUri` reference files by path.
+
+### Static Factory
+
+| Signature | Returns | Description |
+|-----------|---------|-------------|
+| `Song.FromUri(string name, Uri uri)` | `Song` | Creates a `Song` that reads from the given URI at runtime. Platform support varies — most reliable on Desktop targets. |
+
+```csharp
+// Load from content pipeline (preferred for packaged games)
+Song bgm = Content.Load<Song>("Music/Forest");
+
+// Load from a file path at runtime (DesktopGL, Windows)
+Song bgm = Song.FromUri("Forest", new Uri("Content/Music/Forest.ogg", UriKind.Relative));
+```
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `Name` | `string` | Display name. For pipeline assets this is the file name without extension. For `FromUri` songs it is the string passed as the first argument. |
+| `Duration` | `TimeSpan` | Total length of the song. May be `TimeSpan.Zero` until the song has started loading on some platforms. |
+| `IsProtected` | `bool` | `true` if the song is DRM-protected content. |
+| `IsRated` | `bool` | `true` if the user has assigned a rating to this track (media-library songs only). |
+| `Rating` | `int` | User rating in `[1, 10]`, or `0` if unrated. |
+| `TrackNumber` | `int` | Track number on the album, if available. |
+| `PlayCount` | `int` | Number of times this song has been played (media-library songs only). |
+| `Album` | `Album` | The album this song belongs to (media-library songs only). |
+| `Artist` | `Artist` | The artist for this song (media-library songs only). |
+| `Genre` | `Genre` | The genre for this song (media-library songs only). |
+| `IsDisposed` | `bool` | `true` after `Dispose()`. |
+
+### Methods
+
+| Signature | Returns | Description |
+|-----------|---------|-------------|
+| `Dispose()` | `void` | Releases platform resources. Do not call while the song is in the active queue. |
+
+<Warning>
+Do not dispose a `Song` while `MediaPlayer` is playing it. Check `MediaPlayer.Queue.ActiveSong` before disposing.
+</Warning>
+
+---
+
+## MediaQueue
+
+`MediaQueue` represents the ordered list of songs managed by `MediaPlayer`. It is not directly constructed; obtain the live instance from `MediaPlayer.Queue`.
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `ActiveSong` | `Song` | The song that is currently playing or was most recently playing. `null` if the queue is empty. |
+| `ActiveSongIndex` | `int` | Zero-based index of `ActiveSong` within the queue. |
+| `Count` | `int` | Number of songs in the queue. |
+
+<Note>
+Directly manipulating `MediaQueue` outside of `MediaPlayer.Play()` is not part of the public API. Use `MediaPlayer.Play(SongCollection)` to populate the queue, and `MoveNext()`/`MovePrevious()` to navigate it.
+</Note>
+
+---
+
+## Video
+
+`Video` is a sealed disposable class representing a video asset. Video assets are typically loaded through the content pipeline using the **VideoImporter** and **VideoProcessor**.
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `Width` | `int` | Decoded frame width in pixels. |
+| `Height` | `int` | Decoded frame height in pixels. |
+| `Duration` | `TimeSpan` | Total length of the video clip. |
+| `FramesPerSecond` | `float` | Playback frame rate as declared by the asset. |
+| `VideoSoundtrackType` | `VideoSoundtrackType` | Describes the audio content type of the video's soundtrack. |
+| `FileName` | `string` | Internal path to the source asset file. |
+
+### VideoSoundtrackType Enum
+
+| Value | Description |
+|-------|-------------|
+| `Music` | Soundtrack contains background music. |
+| `Dialog` | Soundtrack contains dialog or speech. |
+| `MusicAndDialog` | Soundtrack contains both music and dialog. |
+
+---
+
+## VideoPlayer
+
+`VideoPlayer` decodes and controls playback of a `Video` asset. Each decoded frame is accessible as a `Texture2D` via `GetTexture()`, making it straightforward to render video onto any sprite or mesh.
+
+### Constructor
+
+```csharp
+var player = new VideoPlayer();
+```
+
+No constructor parameters. The player starts in the `Stopped` state.
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `Volume` | `float` | Audio volume for the video's soundtrack, in `[0.0, 1.0]`. |
+| `IsMuted` | `bool` | `true` to silence the video soundtrack without changing `Volume`. |
+| `IsLooped` | `bool` | `true` to restart the video automatically when it reaches the end. |
+| `State` | `MediaState` | Current playback state: `Stopped`, `Playing`, or `Paused`. |
+| `PlayPosition` | `TimeSpan` | Elapsed time within the currently playing video. Returns `TimeSpan.Zero` when stopped. |
+| `Video` | `Video` | The `Video` currently loaded into the player, or `null`. |
+| `IsDisposed` | `bool` | `true` after `Dispose()` has been called. |
+
+### Methods
+
+| Signature | Returns | Description |
+|-----------|---------|-------------|
+| `Play(Video video)` | `void` | Begins playing the specified `Video`. If the same video is paused, it resumes rather than restarting. Throws `ArgumentNullException` if `video` is `null`. |
+| `Pause()` | `void` | Pauses a playing video. Has no effect if stopped. |
+| `Resume()` | `void` | Resumes a paused video. |
+| `Stop()` | `void` | Stops playback and resets the position. |
+| `GetTexture()` | `Texture2D` | Returns a `Texture2D` containing the current decoded video frame. Throws `InvalidOperationException` if no video is set, or if the platform cannot provide a frame within a reasonable timeout. |
+| `Dispose()` | `void` | Releases platform video decoder resources. |
+
+<Warning>
+`GetTexture()` may block briefly on some platforms while the first frame is decoded. Call it only once the player's `State` is `MediaState.Playing`.
+</Warning>
+
+### Example
+
+```csharp
+VideoPlayer videoPlayer;
+Video       introVideo;
+Texture2D   videoFrame;
+
+protected override void LoadContent()
+{
+    videoPlayer = new VideoPlayer();
+    introVideo  = Content.Load<Video>("Videos/Intro");
+    videoPlayer.IsLooped = false;
+    videoPlayer.Volume   = 1.0f;
+    videoPlayer.Play(introVideo);
+}
+
+protected override void Update(GameTime gameTime)
+{
+    if (videoPlayer.State == MediaState.Stopped)
+        ChangeState(GameState.MainMenu);
+}
+
+protected override void Draw(GameTime gameTime)
+{
+    if (videoPlayer.State != MediaState.Stopped)
+        videoFrame = videoPlayer.GetTexture();
+
+    GraphicsDevice.Clear(Color.Black);
+    spriteBatch.Begin();
+    if (videoFrame != null)
+        spriteBatch.Draw(videoFrame,
+            new Rectangle(0, 0, GraphicsDevice.Viewport.Width,
+                               GraphicsDevice.Viewport.Height),
+            Color.White);
+    spriteBatch.End();
+}
+
+protected override void UnloadContent()
+{
+    videoPlayer.Dispose();
+}
+```

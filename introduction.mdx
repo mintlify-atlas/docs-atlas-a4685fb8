@@ -1,0 +1,115 @@
+---
+title: "MonoGame: Cross-Platform Game Framework for .NET"
+sidebarTitle: "Introduction"
+description: "MonoGame is an open-source .NET framework for building 2D and 3D games on Windows, Linux, macOS, Android, iOS, and consoles using C#."
+---
+
+MonoGame is a free, open-source implementation of Microsoft's discontinued XNA Framework, giving C# developers a battle-tested platform for shipping games across desktop, mobile, and console targets. Games like Celeste, Stardew Valley, and Streets of Rage 4 were all built with MonoGame.
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/getting-started/installation">
+    Install MonoGame and set up your development environment in minutes
+  </Card>
+  <Card title="Your First Game" icon="gamepad" href="/getting-started/project-setup">
+    Create a project, draw a sprite, and ship your first build
+  </Card>
+  <Card title="Core Concepts" icon="book" href="/concepts/game-class">
+    Understand the Game loop, components, content pipeline, and graphics device
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/game">
+    Full reference for every public class, method, and property
+  </Card>
+</CardGroup>
+
+## What is MonoGame?
+
+MonoGame is a **framework**, not an engine. It gives you a thin, expressive layer over the platform's GPU, audio stack, and input system — without imposing a scene graph or a visual editor. You write C# code that calls `Initialize`, `LoadContent`, `Update`, and `Draw`, and MonoGame handles the platform differences for you.
+
+### Key capabilities
+
+<CardGroup cols={2}>
+  <Card title="Cross-Platform" icon="globe">
+    One codebase targets Windows (DX & GL), Linux, macOS, Android, iOS, and registered-developer console platforms
+  </Card>
+  <Card title="XNA-Compatible API" icon="puzzle-piece">
+    Drop-in replacement for Microsoft XNA — existing XNA tutorials and code work with minimal changes
+  </Card>
+  <Card title="2D Rendering" icon="image">
+    SpriteBatch provides fast, batched 2D drawing with sorting, blending, and custom shader support
+  </Card>
+  <Card title="3D Rendering" icon="cube">
+    Load FBX/OBJ models, apply built-in PBR-style effects, and render with full depth and stencil control
+  </Card>
+  <Card title="Content Pipeline" icon="wrench">
+    MGCB compiles textures, audio, fonts, models, and shaders into optimized .xnb assets at build time
+  </Card>
+  <Card title="Audio & Input" icon="music">
+    SoundEffect, MediaPlayer, and full keyboard/mouse/gamepad/touch input across all platforms
+  </Card>
+</CardGroup>
+
+## Supported Platforms
+
+| Platform | Package |
+|----------|---------|
+| Windows (DirectX 10+) | `MonoGame.Framework.WindowsDX` |
+| Windows / Linux / macOS (OpenGL) | `MonoGame.Framework.DesktopGL` |
+| Android (API 23+) | `MonoGame.Framework.Android` |
+| iOS / iPadOS 12.2+ | `MonoGame.Framework.iOS` |
+| Consoles (PS4/PS5, Xbox, Switch) | Private — requires platform registration |
+
+<Note>
+Vulkan and DirectX 12 support is available in **preview** for the `3.8.5` development builds on supported platforms.
+</Note>
+
+## Quick Example
+
+```csharp Game1.cs
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+
+public class Game1 : Game
+{
+    private GraphicsDeviceManager _graphics;
+    private SpriteBatch _spriteBatch;
+    private Texture2D _logo;
+
+    public Game1()
+    {
+        _graphics = new GraphicsDeviceManager(this);
+        Content.RootDirectory = "Content";
+        IsMouseVisible = true;
+    }
+
+    protected override void LoadContent()
+    {
+        _spriteBatch = new SpriteBatch(GraphicsDevice);
+        _logo = Content.Load<Texture2D>("logo");
+    }
+
+    protected override void Draw(GameTime gameTime)
+    {
+        GraphicsDevice.Clear(Color.CornflowerBlue);
+
+        _spriteBatch.Begin();
+        _spriteBatch.Draw(_logo, Vector2.Zero, Color.White);
+        _spriteBatch.End();
+
+        base.Draw(gameTime);
+    }
+}
+```
+
+## Getting Help
+
+<CardGroup cols={3}>
+  <Card title="Discord" icon="discord" href="https://discord.gg/monogame">
+    Chat with the core team and community
+  </Card>
+  <Card title="GitHub Discussions" icon="github" href="https://github.com/MonoGame/MonoGame/discussions">
+    Ask questions and share ideas
+  </Card>
+  <Card title="Issue Tracker" icon="bug" href="https://github.com/MonoGame/MonoGame/issues">
+    Report bugs and request features
+  </Card>
+</CardGroup>

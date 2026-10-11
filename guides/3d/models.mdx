@@ -1,0 +1,269 @@
+---
+title: "Loading and Rendering 3D Models in MonoGame"
+sidebarTitle: "3D Models"
+description: "Load FBX or OBJ models through the MonoGame Content Pipeline and draw them with Model.Draw. Learn ModelMesh, ModelBone, and bone transform manipulation."
+---
+
+MonoGame's `Model` class is the primary way to bring 3D assets into your game. After processing a source file through the Content Pipeline, you get a ready-to-render object whose meshes, bones, and effects are all pre-wired and accessible at runtime. This guide walks through loading a model, drawing it with one line, customising its effects per mesh, and working with bone hierarchies for articulated objects.
+
+## Supported Formats and the Content Pipeline
+
+The MonoGame Content Pipeline (MGCB) accepts the most common interchange formats. At build time the importer converts them into the runtime `.xnb` format your game loads.
+
+<CardGroup cols={2}>
+  <Card title="FBX" icon="cube">
+    The most common format for game-ready assets exported from Blender, Maya, and 3ds Max. Supports embedded textures, skeletal rigs, and animation data.
+  </Card>
+  <Card title="OBJ / MTL" icon="file">
+    A simple text-based format suitable for static meshes. Materials are read from the accompanying `.mtl` file.
+  </Card>
+</CardGroup>
+
+Add your asset in the MGCB Editor (`Content.mgcb`), set the **Importer** and **Processor** to the appropriate Model ones, then build. The pipeline compiles the asset alongside your project.
+
+## Loading a Model
+
+Use `ContentManager.Load<Model>` with the asset path relative to your `Content` folder (no file extension):
+
+```csharp
+Model shipModel;
+
+protected override void LoadContent()
+{
+    shipModel = Content.Load<Model>("Models/ship");
+}
+```
+
+<Note>
+  The `Model` constructor is internal — you always obtain instances from the Content Pipeline, never by calling `new Model(...)` directly in game code.
+</Note>
+
+## The Model Object
+
+The `Model` class exposes four key members:
+
+| Member | Type | Description |
+|---|---|---|
+| `Meshes` | `ModelMeshCollection` | All `ModelMesh` objects that make up the model. |
+| `Bones` | `ModelBoneCollection` | All `ModelBone` objects in the skeleton hierarchy. |
+| `Root` | `ModelBone` | The root bone at the top of the hierarchy. |
+| `Tag` | `object` | Arbitrary data attached by a custom content processor (e.g. skinning data). |
+
+## Drawing with Model.Draw
+
+The simplest way to render a model is the built-in `Model.Draw` method. It iterates every mesh and every effect, sets the `World`, `View`, and `Projection` matrices on any effect that implements `IEffectMatrices`, and then calls `ModelMesh.Draw()`.
+
+```csharp
+protected override void Draw(GameTime gameTime)
+{
+    GraphicsDevice.Clear(Color.CornflowerBlue);
+
+    Matrix world      = Matrix.CreateRotationY(rotation);
+    Matrix view       = Matrix.CreateLookAt(
+                            new Vector3(0, 2, 5),
+                            Vector3.Zero,
+                            Vector3.Up);
+    Matrix projection = Matrix.CreatePerspectiveFieldOfView(
+                            MathHelper.ToRadians(45f),
+                            GraphicsDevice.Viewport.AspectRatio,
+                            0.1f, 1000f);
+
+    shipModel.Draw(world, view, projection);
+
+    base.Draw(gameTime);
+}
+```
+
+<Warning>
+  `Model.Draw` requires every effect attached to a mesh to implement `IEffectMatrices`. If you assign a fully custom `Effect` that does not implement that interface, the call throws `InvalidOperationException`. In that case, drive the draw loop manually (see below).
+</Warning>
+
+## Manual Draw Loop with Custom Effects
+
+When you need to configure material properties — textures, lighting, fog, custom parameters — iterate each mesh and effect yourself:
+
+```csharp
+foreach (ModelMesh mesh in shipModel.Meshes)
+{
+    foreach (BasicEffect effect in mesh.Effects)
+    {
+        effect.World      = boneTransforms[mesh.ParentBone.Index] * world;
+        effect.View       = view;
+        effect.Projection = projection;
+        effect.EnableDefaultLighting();
+        effect.TextureEnabled = true;
+        effect.Texture        = shipTexture;
+    }
+    mesh.Draw();
+}
+```
+
+`ModelMesh.Draw()` iterates `MeshParts`, binds each part's `VertexBuffer` and `IndexBuffer`, applies every pass of the current technique, and issues the draw call — so you only need to set effect state before calling it.
+
+## Bone Transforms and Hierarchical Models
+
+Models exported with a skeletal rig contain a tree of `ModelBone` objects. Each bone stores a **local** transform in `ModelBone.Transform` — the offset relative to its parent.
+
+### Copying Absolute Transforms
+
+To position each mesh correctly in world space, you need the absolute (root-relative) transform for every bone. `Model.CopyAbsoluteBoneTransformsTo` fills an array for you:
+
+```csharp
+Matrix[] boneTransforms = new Matrix[shipModel.Bones.Count];
+shipModel.CopyAbsoluteBoneTransformsTo(boneTransforms);
+
+foreach (ModelMesh mesh in shipModel.Meshes)
+{
+    foreach (BasicEffect effect in mesh.Effects)
+    {
+        // Combine the bone's absolute transform with the scene world matrix.
+        effect.World      = boneTransforms[mesh.ParentBone.Index] * world;
+        effect.View       = view;
+        effect.Projection = projection;
+    }
+    mesh.Draw();
+}
+```
+
+<Note>
+  The array must be at least as large as `model.Bones.Count`. The internal `Model.Draw` implementation does exactly this with a shared static buffer.
+</Note>
+
+### Modifying Bone Transforms
+
+You can animate individual bones by writing to `ModelBone.Transform` (the local matrix) and then calling `CopyAbsoluteBoneTransformsTo` again before drawing:
+
+```csharp
+// Rotate the turret bone around its local Y axis.
+ModelBone turret = shipModel.Bones["turret"];
+turret.Transform = Matrix.CreateRotationY(turretAngle)
+                 * Matrix.CreateTranslation(turret.Transform.Translation);
+```
+
+To push an entire array of pre-computed local transforms back into the model, use `Model.CopyBoneTransformsFrom(Matrix[] sourceBoneTransforms)`.
+
+## ModelMesh and ModelMeshPart
+
+`ModelMesh` sits between `Model` and the raw GPU buffers. Its most useful members are:
+
+| Member | Type | Description |
+|---|---|---|
+| `BoundingSphere` | `BoundingSphere` | Approximate bounding volume for culling tests. |
+| `Effects` | `ModelEffectCollection` | All effects assigned to this mesh's parts. |
+| `MeshParts` | `ModelMeshPartCollection` | Sub-sections sharing a single material. |
+| `Name` | `string` | The mesh name from the authoring tool. |
+| `ParentBone` | `ModelBone` | The bone that governs this mesh's position. |
+
+Each `ModelMeshPart` exposes the raw GPU resources:
+
+| Member | Type | Description |
+|---|---|---|
+| `VertexBuffer` | `VertexBuffer` | GPU vertex data. |
+| `IndexBuffer` | `IndexBuffer` | GPU index data. |
+| `NumVertices` | `int` | Number of vertices in this part. |
+| `PrimitiveCount` | `int` | Number of triangles to draw. |
+| `Effect` | `Effect` | The effect used when `ModelMesh.Draw()` is called. |
+
+### Frustum Culling with BoundingSphere
+
+Skip drawing meshes that are outside the camera frustum:
+
+```csharp
+BoundingFrustum frustum = new BoundingFrustum(view * projection);
+
+foreach (ModelMesh mesh in shipModel.Meshes)
+{
+    // Transform the mesh bounding sphere into world space.
+    BoundingSphere worldSphere = mesh.BoundingSphere.Transform(
+        boneTransforms[mesh.ParentBone.Index] * world);
+
+    if (frustum.Contains(worldSphere) == ContainmentType.Disjoint)
+        continue; // Skip this mesh entirely.
+
+    foreach (BasicEffect effect in mesh.Effects)
+    {
+        effect.World      = boneTransforms[mesh.ParentBone.Index] * world;
+        effect.View       = view;
+        effect.Projection = projection;
+    }
+    mesh.Draw();
+}
+```
+
+## Complete Example: Rotating 3D Model
+
+The following is a self-contained `Game` subclass that loads a model and spins it around the Y axis.
+
+```csharp
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+
+public class ModelDemo : Game
+{
+    private GraphicsDeviceManager _graphics;
+    private Model _model;
+    private float  _rotation;
+
+    // Bone transform scratch buffer — allocated once to avoid per-frame GC.
+    private Matrix[] _boneTransforms;
+
+    public ModelDemo()
+    {
+        _graphics = new GraphicsDeviceManager(this);
+        Content.RootDirectory = "Content";
+        IsMouseVisible = true;
+    }
+
+    protected override void LoadContent()
+    {
+        _model = Content.Load<Model>("Models/ship");
+        _boneTransforms = new Matrix[_model.Bones.Count];
+    }
+
+    protected override void Update(GameTime gameTime)
+    {
+        float elapsed = (float)gameTime.ElapsedGameTime.TotalSeconds;
+        _rotation += elapsed * MathHelper.Pi; // half turn per second
+        base.Update(gameTime);
+    }
+
+    protected override void Draw(GameTime gameTime)
+    {
+        GraphicsDevice.Clear(Color.CornflowerBlue);
+
+        // Compute bone transforms relative to the model root.
+        _model.CopyAbsoluteBoneTransformsTo(_boneTransforms);
+
+        Matrix world = Matrix.CreateRotationY(_rotation);
+
+        Matrix view = Matrix.CreateLookAt(
+            new Vector3(0f, 2f, 6f),
+            Vector3.Zero,
+            Vector3.Up);
+
+        Matrix projection = Matrix.CreatePerspectiveFieldOfView(
+            MathHelper.ToRadians(45f),
+            GraphicsDevice.Viewport.AspectRatio,
+            0.1f,
+            1000f);
+
+        foreach (ModelMesh mesh in _model.Meshes)
+        {
+            foreach (BasicEffect effect in mesh.Effects)
+            {
+                effect.World      = _boneTransforms[mesh.ParentBone.Index] * world;
+                effect.View       = view;
+                effect.Projection = projection;
+                effect.EnableDefaultLighting();
+            }
+            mesh.Draw();
+        }
+
+        base.Draw(gameTime);
+    }
+}
+```
+
+<Tip>
+  Allocate `_boneTransforms` once in `LoadContent` rather than every frame — `Matrix[]` allocations add up quickly at 60 fps and trigger garbage collection.
+</Tip>

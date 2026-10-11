@@ -1,0 +1,308 @@
+---
+title: "MGCB: MonoGame Content Builder Command-Line Tool"
+sidebarTitle: "mgcb"
+description: "mgcb is the MonoGame Content Builder CLI that compiles game assets into .xnb files. Learn installation, the .mgcb project format, command-line flags, and CI integration."
+---
+
+The MonoGame Content Builder (`mgcb`) is the command-line tool at the heart of MonoGame's content pipeline. It reads a `.mgcb` project file and compiles each referenced asset — textures, audio clips, 3D models, sprite fonts, shaders, and more — into platform-specific `.xnb` binary files that MonoGame can load at runtime. By processing assets at build time rather than at runtime, `mgcb` ensures your game loads fast and that assets are optimally encoded for each target platform.
+
+<CardGroup cols={2}>
+  <Card title="Content Pipeline Overview" icon="conveyor-belt">
+    Transforms raw source assets (PNG, WAV, FBX, etc.) into platform-optimised `.xnb` binaries.
+  </Card>
+  <Card title="Cross-Platform" icon="globe">
+    Produces different output for each target: DesktopGL, WindowsDX, Android, iOS, and console platforms.
+  </Card>
+  <Card title="Incremental Builds" icon="bolt">
+    Tracks which assets changed and only reprocesses what needs updating, keeping builds fast.
+  </Card>
+  <Card title="MSBuild Integration" icon="wrench">
+    Runs automatically as part of `dotnet build` via the `MonoGame.Content.Builder.Task` NuGet package.
+  </Card>
+</CardGroup>
+
+---
+
+## Installation
+
+`mgcb` is distributed as a .NET global tool. You need the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet) or later installed before running the command below.
+
+```bash
+dotnet tool install --global dotnet-mgcb
+```
+
+To update an existing installation:
+
+```bash
+dotnet tool update --global dotnet-mgcb
+```
+
+Verify the installation succeeded:
+
+```bash
+mgcb --help
+```
+
+<Note>
+  On macOS and Linux, make sure `~/.dotnet/tools` is on your `PATH`. The .NET SDK installer usually adds this automatically, but if `mgcb` is not found after installation, add `export PATH="$PATH:$HOME/.dotnet/tools"` to your shell profile.
+</Note>
+
+---
+
+## Basic Usage
+
+Pass the path to a `.mgcb` project file directly to `mgcb`:
+
+```bash
+mgcb Content/Content.mgcb
+```
+
+`mgcb` sets its working directory to the folder containing the `.mgcb` file, so all relative paths inside the project are resolved correctly.
+
+You can also pass a project file using the response-file flag:
+
+```bash
+mgcb /@:Content/Content.mgcb
+```
+
+Both forms are equivalent. The bare-path form (without `/@:`) is detected automatically when the argument ends in `.mgcb`.
+
+---
+
+## The `.mgcb` Project File Format
+
+A `.mgcb` file is a plain-text file composed of directives, one per line. Lines beginning with `#` are comments. The parser processes directives sequentially, so the order matters — project-level settings must appear before any `/build:` directives that depend on them.
+
+### Project-Level Directives
+
+| Directive | Description |
+|---|---|
+| `/outputDir:<path>` | Directory where compiled `.xnb` files are written. Supports `$(Platform)`, `$(Configuration)`, and `$(Profile)` substitution tokens. |
+| `/intermediateDir:<path>` | Directory for intermediate/cache files used to track incremental builds. |
+| `/platform:<name>` | Target platform. Common values: `DesktopGL`, `Windows`, `Android`, `iOS`. |
+| `/config:<string>` | Build configuration string forwarded from the build system (e.g. `Debug` or `Release`). |
+| `/profile:<name>` | Graphics profile: `HiDef` (default) or `Reach`. |
+| `/compress:<bool>` | Whether to compress `.xnb` output files. Default is `False`. |
+| `/reference:<assembly>` | Path to an assembly that provides custom importers, processors, or writers. |
+
+### Per-Asset Directives
+
+These directives are set before each `/build:` line and apply only to that asset:
+
+| Directive | Description |
+|---|---|
+| `/importer:<className>` | Class name of the content importer (e.g. `TextureImporter`, `SongImporter`). |
+| `/processor:<className>` | Class name of the content processor (e.g. `TextureProcessor`, `SongProcessor`). |
+| `/processorParam:<name>=<value>` | Sets a named parameter on the processor. Repeat for each parameter. |
+| `/build:<sourceFile>` | Adds the source file to the build. Optionally use `sourceFile;destFile` to override the output path. |
+| `/copy:<sourceFile>` | Copies a file verbatim to the output directory, bypassing the pipeline entirely. |
+
+### Substitution Tokens
+
+The `$(Platform)`, `$(Configuration)` / `$(Config)`, and `$(Profile)` tokens are replaced at build time with the values of `/platform:`, `/config:`, and `/profile:` respectively. This lets a single `.mgcb` file target multiple platforms without editing paths by hand.
+
+### Preprocessor Directives (inside `.mgcb` files)
+
+When a `.mgcb` file is processed as a response file, a limited preprocessor is available:
+
+```
+$set KEY=VALUE
+$if KEY=VALUE
+  /build:SomeAsset.png
+$endif
+```
+
+Use `$set` and `$if`/`$endif` to conditionally include assets based on build variables.
+
+---
+
+## Sample `.mgcb` File
+
+The following example project compiles a texture, a sprite font, and a sound effect:
+
+```
+# MonoGame Content Builder Project - Sample
+
+/outputDir:bin/$(Platform)
+/intermediateDir:obj/$(Platform)
+/platform:DesktopGL
+/config:
+/profile:HiDef
+/compress:False
+
+#-----------------------
+# Texture
+#-----------------------
+
+/importer:TextureImporter
+/processor:TextureProcessor
+/processorParam:ColorKeyEnabled=False
+/processorParam:GenerateMipmaps=False
+/processorParam:PremultiplyAlpha=True
+/build:Textures/player.png
+
+#-----------------------
+# Sprite Font
+#-----------------------
+
+/importer:FontDescriptionImporter
+/processor:FontDescriptionProcessor
+/build:Fonts/arial.spritefont
+
+#-----------------------
+# Sound Effect
+#-----------------------
+
+/importer:WavImporter
+/processor:SoundEffectProcessor
+/processorParam:Quality=Best
+/build:Audio/jump.wav
+```
+
+<Tip>
+  Keep your `.mgcb` file under version control alongside your project. Because it is plain text, diffs are human-readable and merge conflicts are easy to resolve.
+</Tip>
+
+---
+
+## Command-Line Flags
+
+All flags use the `/name:value` syntax on Windows and `--name=value` on macOS/Linux. Single-character short flags (`-r`, `-c`, etc.) are also accepted.
+
+| Flag | Short | Description |
+|---|---|---|
+| `/@:<responseFile>` | `/@` | Load a `.mgcb` project file (response file) and process its directives. |
+| `/outputDir:<path>` | `/o` | Override the output directory from the command line. |
+| `/intermediateDir:<path>` | `/n` | Override the intermediate directory. |
+| `/platform:<name>` | `/t` | Override the target platform. |
+| `/profile:<name>` | `/g` | Override the graphics profile (`HiDef` or `Reach`). |
+| `/config:<string>` | — | Override the build config string. |
+| `/rebuild` | `/r` | Force a full rebuild of all assets, ignoring cached state. |
+| `/clean` | `/c` | Delete all previously compiled output and intermediate files. |
+| `/incremental` | `/I` | Skip cleaning files that are not part of the current build (useful when building subsets of content). |
+| `/importer:<name>` | `/i` | Set the importer class name for the next `/build:` directive. |
+| `/processor:<name>` | `/p` | Set the processor class name for the next `/build:` directive. |
+| `/processorParam:<n>=<v>` | `/P` | Set a processor parameter for the next `/build:` directive. |
+| `/build:<file>` | `/b` | Add a file to the build. |
+| `/copy:<file>` | — | Copy a file verbatim to the output directory. |
+| `/reference:<assembly>` | `/f` | Add an assembly reference for resolving custom pipeline types. |
+| `/workingDir:<path>` | `/w` | Set the working directory for resolving relative paths. |
+| `/quiet` | `/q` | Suppress all output except errors. |
+| `/launchdebugger` | `/d` | Launch the system debugger before building (useful for pipeline debugging). |
+| `/waitfordebugger` | `/a` | Wait for a debugger to attach before starting the build. |
+| `/help` | `/h` | Display the help message. |
+
+<Note>
+  Flags inside a `.mgcb` file always use the `/name:value` form regardless of operating system, because the file format is platform-independent.
+</Note>
+
+---
+
+## MSBuild / `dotnet build` Integration
+
+In a typical MonoGame project, you do not need to invoke `mgcb` manually. The `MonoGame.Content.Builder.Task` NuGet package hooks into the MSBuild pipeline and runs `mgcb` automatically every time you call `dotnet build`.
+
+Your `.csproj` already references this package when you use an official MonoGame project template:
+
+```xml
+<ItemGroup>
+  <PackageReference Include="MonoGame.Content.Builder.Task" Version="3.8.2.*" />
+</ItemGroup>
+```
+
+Content files are discovered via a `<MonoGameContentReference>` item:
+
+```xml
+<ItemGroup>
+  <MonoGameContentReference Include="Content\Content.mgcb" />
+</ItemGroup>
+```
+
+When you run `dotnet build`, the task:
+
+1. Invokes `mgcb` with the `.mgcb` file and the active build configuration.
+2. Copies compiled `.xnb` files into your project's output directory (`bin/`).
+
+No additional configuration is needed for basic projects.
+
+---
+
+## CI/CD Integration
+
+Because `mgcb` is a .NET global tool, it integrates cleanly into any CI/CD pipeline that has the .NET SDK available.
+
+<Tabs>
+  <Tab title="GitHub Actions">
+    ```yaml
+    name: Build
+
+    on: [push, pull_request]
+
+    jobs:
+      build:
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@v4
+
+          - name: Setup .NET
+            uses: actions/setup-dotnet@v4
+            with:
+              dotnet-version: '8.x'
+
+          - name: Install MonoGame tools
+            run: dotnet tool install --global dotnet-mgcb
+
+          - name: Restore NuGet packages
+            run: dotnet restore
+
+          - name: Build (compiles content automatically)
+            run: dotnet build --configuration Release
+    ```
+  </Tab>
+  <Tab title="Manual content build">
+    ```bash
+    # Install the tool
+    dotnet tool install --global dotnet-mgcb
+
+    # Build content directly
+    mgcb /platform:DesktopGL /rebuild /@:Content/Content.mgcb
+
+    # Or with quiet output for clean CI logs
+    mgcb /quiet /@:Content/Content.mgcb
+    ```
+  </Tab>
+  <Tab title="Makefile / shell script">
+    ```bash
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    PLATFORM="${1:-DesktopGL}"
+
+    echo "Building content for platform: $PLATFORM"
+    mgcb \
+      --platform="$PLATFORM" \
+      --outputDir="bin/$PLATFORM" \
+      --intermediateDir="obj/$PLATFORM" \
+      --rebuild \
+      --@=Content/Content.mgcb
+
+    echo "Content build complete."
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+  On Linux CI runners, shader compilation (for `.fx` files processed via `EffectProcessor`) requires Wine. See the [mgfxc documentation](/guides/tools/mgfxc) for Wine setup instructions.
+</Warning>
+
+---
+
+## Common Errors and Tips
+
+<Tip>
+  If `mgcb` reports that an importer or processor cannot be found, check that any custom pipeline assembly is listed under `/reference:` in your `.mgcb` file, or passed via the `/reference:` flag on the command line.
+</Tip>
+
+<Warning>
+  `mgcb` only runs on a 64-bit operating system. Attempting to run it on a 32-bit process will print an error and exit with code `-1`.
+</Warning>

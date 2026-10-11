@@ -1,0 +1,276 @@
+---
+title: "Understanding the MonoGame Game Loop and Lifecycle Methods"
+sidebarTitle: "Game Loop"
+description: "Learn how MonoGame's fixed-timestep game loop works, when Initialize, LoadContent, Update, and Draw are called, and how to control timing."
+---
+
+Every MonoGame game runs inside a loop that repeatedly calls two methods — `Update` and `Draw` — until the player quits. Understanding exactly when those calls happen, how time is measured between them, and how to control the pace of the loop is essential for writing smooth, predictable game behavior. This page covers the full lifecycle of a `Game` object, the `GameTime` struct that carries timing information into each call, and the properties that let you tune fixed-step vs. variable-step timing, VSync, and power usage when the window is inactive.
+
+## Game Lifecycle
+
+A MonoGame `Game` goes through the following stages from startup to shutdown:
+
+```
+Game()                  ← Constructor: create GraphicsDeviceManager, set Content.RootDirectory
+  ↓
+Initialize()            ← Called once: set up non-graphical state, calls LoadContent() internally
+  ↓
+LoadContent()           ← Called once after Initialize: create SpriteBatch, load .xnb assets
+  ↓
+┌─────────────────────────────────┐
+│  Update(GameTime)               │  ← Input, physics, AI — runs on every time step
+│  Draw(GameTime)                 │  ← Rendering — runs once per frame (may be suppressed)
+└─────────────────────────────────┘  (loop repeats until Exit() is called)
+  ↓
+UnloadContent()         ← Called when the loop ends: release unmanaged content if needed
+  ↓
+Dispose()               ← Final cleanup: graphics device, content manager, platform resources
+```
+
+### Initialize
+
+`Initialize()` is called once before the game loop starts. It finalizes the `GraphicsDevice`, initializes any `GameComponent` objects that have been added to `Components`, and then calls `LoadContent()`. Always call `base.Initialize()` at the end of your override:
+
+```csharp
+protected override void Initialize()
+{
+    // Set up game state that does not depend on loaded assets.
+    _playerPosition = new Vector2(100, 200);
+
+    base.Initialize(); // Creates the GraphicsDevice, then calls LoadContent()
+}
+```
+
+### LoadContent
+
+`LoadContent()` is called by `base.Initialize()` once the `GraphicsDevice` is ready. This is where you create a `SpriteBatch` and call `Content.Load<T>()`:
+
+```csharp
+protected override void LoadContent()
+{
+    _spriteBatch = new SpriteBatch(GraphicsDevice);
+    _playerTexture = Content.Load<Texture2D>("player");
+}
+```
+
+### UnloadContent
+
+`UnloadContent()` is called when the game loop is about to terminate. The `ContentManager` automatically disposes assets that implement `IDisposable` when `Content.Unload()` is called, but if you created any resources outside of `Content.Load<T>()` you can release them here:
+
+```csharp
+protected override void UnloadContent()
+{
+    // Content.Unload() disposes everything loaded by Content.Load<T>().
+    Content.Unload();
+}
+```
+
+## The GameTime Struct
+
+Both `Update` and `Draw` receive a `GameTime` argument that carries timing data for the current frame:
+
+| Member | Type | Description |
+|---|---|---|
+| `TotalGameTime` | `TimeSpan` | Total time elapsed since `Run()` was called. |
+| `ElapsedGameTime` | `TimeSpan` | Time elapsed since the last `Update` call. |
+| `IsRunningSlowly` | `bool` | `true` when MonoGame detects the game has fallen behind by 5 or more frames. |
+
+`IsRunningSlowly` is set when the update loop has accumulated a lag of 5 or more frames without catching up. You can use it to simplify visual effects or skip non-essential work:
+
+```csharp
+protected override void Update(GameTime gameTime)
+{
+    if (gameTime.IsRunningSlowly)
+    {
+        // Skip optional particle updates to recover performance.
+        _particleSystem.Skip();
+    }
+}
+```
+
+## Fixed vs. Variable Timestep
+
+MonoGame's loop runs in **fixed-timestep mode by default**. This means `Update` is called at a constant rate regardless of rendering speed, which makes physics and gameplay deterministic.
+
+### IsFixedTimeStep
+
+```csharp
+IsFixedTimeStep = true;  // default — Update fires at a fixed rate
+IsFixedTimeStep = false; // variable — Update fires once per rendered frame
+```
+
+### TargetElapsedTime
+
+When `IsFixedTimeStep` is `true`, the target interval between `Update` calls is controlled by `TargetElapsedTime`. The default is **60 updates per second**:
+
+```csharp
+// Default value from Game.cs:
+// _targetElapsedTime = TimeSpan.FromTicks(166667); // ~16.667 ms = 60 fps
+
+// Change to 30 updates per second:
+TargetElapsedTime = TimeSpan.FromSeconds(1.0 / 30.0);
+
+// Change to 120 updates per second:
+TargetElapsedTime = TimeSpan.FromSeconds(1.0 / 120.0);
+```
+
+### VSync
+
+VSync is managed by `GraphicsDeviceManager.SynchronizeWithVerticalRetrace`, which defaults to `true`. When enabled, `Draw` is synchronized to the monitor's refresh rate, preventing screen tearing:
+
+```csharp
+_graphics.SynchronizeWithVerticalRetrace = false; // disable VSync
+_graphics.ApplyChanges();
+```
+
+## Preventing the Spiral of Death
+
+If a single `Update` call takes longer than `TargetElapsedTime`, MonoGame will call `Update` multiple times in the next tick to catch up. Left unchecked, this can cascade into a loop where catching up takes longer than the target, causing the game to fall further and further behind — the classic "spiral of death."
+
+`MaxElapsedTime` caps the total accumulated lag that MonoGame will attempt to recover in one tick. Its default is **500 milliseconds**:
+
+```csharp
+// From Game.cs:
+// _maxElapsedTime = TimeSpan.FromMilliseconds(500);
+
+// Allow up to 250 ms of catch-up before dropping frames:
+MaxElapsedTime = TimeSpan.FromMilliseconds(250);
+```
+
+When the accumulated lag exceeds `MaxElapsedTime`, MonoGame clamps it, which drops the excess update calls rather than attempting to catch up. Frames are dropped, but the game remains playable.
+
+<Note>
+  `MaxElapsedTime` must be greater than or equal to `TargetElapsedTime`. Setting a value smaller than `TargetElapsedTime` will throw an `ArgumentOutOfRangeException`.
+</Note>
+
+## SuppressDraw
+
+Call `SuppressDraw()` inside `Update` to tell MonoGame to skip the `Draw` call for the current tick. This is useful in menu screens or loading screens where the visuals do not change every frame:
+
+```csharp
+protected override void Update(GameTime gameTime)
+{
+    if (_menuIsIdle)
+    {
+        SuppressDraw(); // Draw will not be called this tick
+    }
+
+    base.Update(gameTime);
+}
+```
+
+`SuppressDraw()` only suppresses one frame at a time. You must call it again in each `Update` where you want to skip rendering.
+
+## InactiveSleepTime
+
+When the game window loses focus, MonoGame throttles the loop by sleeping between ticks. The sleep duration is controlled by `InactiveSleepTime`, which defaults to **20 milliseconds** (~50 ticks/second when inactive):
+
+```csharp
+// From Game.cs:
+// _inactiveSleepTime = TimeSpan.FromSeconds(0.02);
+
+// Sleep longer when inactive to save more power:
+InactiveSleepTime = TimeSpan.FromMilliseconds(100);
+
+// Disable inactive throttling entirely:
+InactiveSleepTime = TimeSpan.Zero;
+```
+
+## Exiting the Game
+
+Call `Exit()` to signal that the game should stop at the end of the current tick. On iOS, `Exit()` is marked obsolete because the platform policy does not permit apps to close themselves programmatically.
+
+```csharp
+protected override void Update(GameTime gameTime)
+{
+    if (Keyboard.GetState().IsKeyDown(Keys.Escape))
+    {
+        Exit(); // Ends the loop after this Update/Draw cycle
+    }
+
+    base.Update(gameTime);
+}
+```
+
+`Exit()` sets an internal flag that is checked after `Draw` completes. `UnloadContent()` is called before the platform window closes.
+
+## Delta-Time Based Movement
+
+Even in fixed-timestep mode, it is good practice to scale all movement and animation by the elapsed time so the code continues to work correctly if you ever change `TargetElapsedTime`.
+
+```csharp
+public class Game1 : Game
+{
+    private GraphicsDeviceManager _graphics;
+    private SpriteBatch _spriteBatch;
+    private Texture2D _playerTexture;
+
+    private Vector2 _position;
+    private const float Speed = 200f; // pixels per second
+
+    public Game1()
+    {
+        _graphics = new GraphicsDeviceManager(this);
+        Content.RootDirectory = "Content";
+        IsMouseVisible = true;
+    }
+
+    protected override void LoadContent()
+    {
+        _spriteBatch = new SpriteBatch(GraphicsDevice);
+        _playerTexture = Content.Load<Texture2D>("player");
+        _position = new Vector2(100, 100);
+    }
+
+    protected override void Update(GameTime gameTime)
+    {
+        // Elapsed time in seconds — scale movement so it is speed-per-second,
+        // not speed-per-frame.
+        float delta = (float)gameTime.ElapsedGameTime.TotalSeconds;
+
+        var keyState = Keyboard.GetState();
+
+        if (keyState.IsKeyDown(Keys.Right)) _position.X += Speed * delta;
+        if (keyState.IsKeyDown(Keys.Left))  _position.X -= Speed * delta;
+        if (keyState.IsKeyDown(Keys.Down))  _position.Y += Speed * delta;
+        if (keyState.IsKeyDown(Keys.Up))    _position.Y -= Speed * delta;
+
+        base.Update(gameTime);
+    }
+
+    protected override void Draw(GameTime gameTime)
+    {
+        GraphicsDevice.Clear(Color.CornflowerBlue);
+
+        _spriteBatch.Begin();
+        _spriteBatch.Draw(_playerTexture, _position, Color.White);
+        _spriteBatch.End();
+
+        base.Draw(gameTime);
+    }
+}
+```
+
+## Measuring Frames Per Second
+
+`GameTime.ElapsedGameTime.TotalSeconds` gives you the time (in seconds) between calls. Its reciprocal is the instantaneous frame rate:
+
+```csharp
+private double _fps;
+
+protected override void Draw(GameTime gameTime)
+{
+    // Instantaneous FPS — can be noisy. Consider a rolling average for display.
+    _fps = 1.0 / gameTime.ElapsedGameTime.TotalSeconds;
+
+    GraphicsDevice.Clear(Color.CornflowerBlue);
+
+    // Draw _fps to the screen via a SpriteFont...
+
+    base.Draw(gameTime);
+}
+```
+
+<Tip>
+  For a smoother FPS display, maintain a rolling average over the last 60 frames rather than using the raw instantaneous value. Instantaneous FPS fluctuates visibly even when the game is running steadily.
+</Tip>

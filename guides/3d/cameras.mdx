@@ -1,0 +1,445 @@
+---
+title: "3D Camera Setup: View and Projection Matrices in MonoGame"
+sidebarTitle: "Cameras"
+description: "Build a 3D camera in MonoGame using Matrix.CreateLookAt and Matrix.CreatePerspectiveFieldOfView. Covers view, projection, and viewport transforms."
+---
+
+Every 3D object drawn in MonoGame is transformed through three matrices before it reaches the screen. Understanding how those matrices are constructed — and rebuilding them correctly when the window resizes — is the foundation of any 3D camera system. This guide covers the full MVP pipeline, both perspective and orthographic projections, viewport utilities, and a complete reusable free-look camera class.
+
+## The MVP Transform Pipeline
+
+Each vertex position is multiplied by three matrices in sequence:
+
+```
+clip_position = object_position × World × View × Projection
+```
+
+| Matrix | Purpose | Typical source |
+|---|---|---|
+| **World** | Positions and orients the object in the scene. | `Matrix.CreateTranslation` / `CreateRotationY` etc. |
+| **View** | Transforms the scene into camera space. | `Matrix.CreateLookAt` |
+| **Projection** | Projects 3D camera space onto the 2D clip plane. | `Matrix.CreatePerspectiveFieldOfView` |
+
+---
+
+## View Matrix
+
+`Matrix.CreateLookAt` constructs a view matrix from three vectors:
+
+```csharp
+Matrix view = Matrix.CreateLookAt(
+    cameraPosition: new Vector3(0f, 5f, 10f),  // where the camera is
+    cameraTarget:   Vector3.Zero,               // what it looks at
+    cameraUpVector: Vector3.Up                  // which way is up (0, 1, 0)
+);
+```
+
+The resulting matrix moves and rotates the entire scene so the camera appears to be at the origin looking along -Z. `Vector3.Up` is `(0, 1, 0)`.
+
+<Tip>
+  Avoid setting `cameraPosition` equal to `cameraTarget` — the resulting zero-length direction vector produces a degenerate matrix. Similarly, do not let `cameraUpVector` be parallel to the look direction.
+</Tip>
+
+---
+
+## Perspective Projection
+
+Use `Matrix.CreatePerspectiveFieldOfView` for a natural 3D perspective:
+
+```csharp
+Matrix projection = Matrix.CreatePerspectiveFieldOfView(
+    fieldOfView:        MathHelper.ToRadians(45f),    // vertical FOV in radians
+    aspectRatio:        GraphicsDevice.Viewport.AspectRatio,
+    nearPlaneDistance:  0.1f,
+    farPlaneDistance:   1000f
+);
+```
+
+| Parameter | Typical value | Notes |
+|---|---|---|
+| `fieldOfView` | `MathHelper.ToRadians(45f)` to `ToRadians(75f)` | Vertical angle. Must be in (0, π). |
+| `aspectRatio` | `GraphicsDevice.Viewport.AspectRatio` | Width ÷ Height; recalculate on resize. |
+| `nearPlaneDistance` | `0.1f` | Must be > 0. |
+| `farPlaneDistance` | `1000f` | Must be > `nearPlaneDistance`. Pass `float.PositiveInfinity` for an infinite far plane. |
+
+<Warning>
+  The ratio of `farPlaneDistance / nearPlaneDistance` directly affects depth-buffer precision. A ratio of 10 000 (near = 0.1, far = 1000) is generally safe. Extremely large ratios cause z-fighting (flickering surfaces at distance).
+</Warning>
+
+---
+
+## Orthographic Projection
+
+For UI, HUD elements, or top-down strategy games that have no perspective depth, use an orthographic projection:
+
+```csharp
+Matrix ortho = Matrix.CreateOrthographic(
+    width:       GraphicsDevice.Viewport.Width,
+    height:      GraphicsDevice.Viewport.Height,
+    zNearPlane: -1f,
+    zFarPlane:   1f
+);
+```
+
+For a custom off-centre region (useful for split-screen or map views):
+
+```csharp
+Matrix orthoOffCenter = Matrix.CreateOrthographicOffCenter(
+    left:        0f,
+    right:       800f,
+    bottom:      0f,
+    top:         600f,
+    zNearPlane:  0f,
+    zFarPlane:   100f
+);
+```
+
+---
+
+## GraphicsDevice.Viewport
+
+The `Viewport` struct gives you the screen dimensions and contains the two most useful unprojection helpers:
+
+| Member | Type | Description |
+|---|---|---|
+| `Width` | `int` | Viewport width in pixels. |
+| `Height` | `int` | Viewport height in pixels. |
+| `AspectRatio` | `float` | `Width / Height` as a float. |
+| `Project` | method | Transforms a 3D world position into screen (pixel) coordinates. |
+| `Unproject` | method | Transforms a screen position back into 3D world space (e.g. mouse picking). |
+
+### Screen-Space Projection
+
+```csharp
+// Convert a 3D point to a 2D screen position.
+Vector3 screenPos = GraphicsDevice.Viewport.Project(
+    source:     worldPosition,
+    projection: projection,
+    view:       view,
+    world:      Matrix.Identity
+);
+// screenPos.X and screenPos.Y are pixel coordinates.
+// screenPos.Z is depth (0 = near, 1 = far).
+```
+
+### Unprojection (Mouse Picking)
+
+```csharp
+// Build a ray from the camera through a screen pixel.
+Vector3 nearPoint = GraphicsDevice.Viewport.Unproject(
+    new Vector3(mouseX, mouseY, 0f), projection, view, Matrix.Identity);
+
+Vector3 farPoint = GraphicsDevice.Viewport.Unproject(
+    new Vector3(mouseX, mouseY, 1f), projection, view, Matrix.Identity);
+
+Vector3 rayDirection = Vector3.Normalize(farPoint - nearPoint);
+```
+
+---
+
+## Handling Viewport Resize
+
+When the window is resized, `GraphicsDevice.Viewport.AspectRatio` changes, so the projection matrix must be rebuilt. Subscribe to `Window.ClientSizeChanged`:
+
+```csharp
+protected override void Initialize()
+{
+    Window.ClientSizeChanged += OnResize;
+    base.Initialize();
+}
+
+private void OnResize(object sender, EventArgs e)
+{
+    _graphics.PreferredBackBufferWidth  = Window.ClientBounds.Width;
+    _graphics.PreferredBackBufferHeight = Window.ClientBounds.Height;
+    _graphics.ApplyChanges();
+
+    // Rebuild projection with the new aspect ratio.
+    _projection = Matrix.CreatePerspectiveFieldOfView(
+        MathHelper.ToRadians(45f),
+        GraphicsDevice.Viewport.AspectRatio,
+        0.1f, 1000f);
+}
+```
+
+---
+
+## Frustum Culling with BoundingFrustum
+
+A `BoundingFrustum` represents the six planes of the camera's viewing volume. Construct it from the combined view × projection matrix and use it to skip drawing objects that are outside the frustum:
+
+```csharp
+// Rebuild whenever view or projection changes.
+BoundingFrustum frustum = new BoundingFrustum(view * projection);
+```
+
+Test a `BoundingBox`:
+
+```csharp
+BoundingBox box = new BoundingBox(min, max);
+if (frustum.Contains(box) != ContainmentType.Disjoint)
+{
+    DrawObject();
+}
+```
+
+Test a `BoundingSphere` (faster, suitable for most mesh-level culling):
+
+```csharp
+BoundingSphere sphere = mesh.BoundingSphere.Transform(worldMatrix);
+if (frustum.Contains(sphere) != ContainmentType.Disjoint)
+{
+    DrawMesh(mesh);
+}
+```
+
+`BoundingFrustum` also exposes the six individual `Plane` properties: `Near`, `Far`, `Left`, `Right`, `Top`, and `Bottom`.
+
+<Tip>
+  Re-create `BoundingFrustum` only when `view` or `projection` actually changes, not every frame if the camera is stationary. The constructor extracts and normalises six planes from the matrix, which has a non-trivial cost at scale.
+</Tip>
+
+---
+
+## Complete Reusable Camera Class
+
+The class below implements a free-look camera with position, yaw (horizontal rotation), and pitch (vertical rotation). It follows the pattern used in most first- and third-person games.
+
+```csharp
+using Microsoft.Xna.Framework;
+
+/// <summary>
+/// A free-look 3D camera that builds View and Projection matrices from
+/// position, yaw, and pitch values.
+/// </summary>
+public class Camera
+{
+    // ── Camera state ────────────────────────────────────────────────────────
+
+    /// <summary>World-space position of the camera.</summary>
+    public Vector3 Position { get; set; }
+
+    /// <summary>Horizontal rotation in radians (around the world Y axis).</summary>
+    public float Yaw { get; set; }
+
+    /// <summary>Vertical rotation in radians (around the local X axis).
+    /// Clamped to ±89° to avoid gimbal lock at straight up/down.</summary>
+    public float Pitch
+    {
+        get => _pitch;
+        set => _pitch = MathHelper.Clamp(value,
+                            MathHelper.ToRadians(-89f),
+                            MathHelper.ToRadians( 89f));
+    }
+
+    // ── Projection settings ─────────────────────────────────────────────────
+
+    /// <summary>Vertical field of view in radians.</summary>
+    public float FieldOfView { get; set; } = MathHelper.ToRadians(45f);
+
+    /// <summary>Width ÷ Height of the render target.</summary>
+    public float AspectRatio { get; set; }
+
+    /// <summary>Near clip plane distance.</summary>
+    public float NearPlane { get; set; } = 0.1f;
+
+    /// <summary>Far clip plane distance.</summary>
+    public float FarPlane { get; set; } = 1000f;
+
+    // ── Cached matrices (rebuilt in Update) ─────────────────────────────────
+
+    /// <summary>The current view matrix.</summary>
+    public Matrix View { get; private set; }
+
+    /// <summary>The current projection matrix.</summary>
+    public Matrix Projection { get; private set; }
+
+    /// <summary>Combined view * projection for frustum culling.</summary>
+    public Matrix ViewProjection => View * Projection;
+
+    // ── Private fields ───────────────────────────────────────────────────────
+
+    private float _pitch;
+
+    // ── Constructor ──────────────────────────────────────────────────────────
+
+    /// <param name="aspectRatio">
+    ///   Pass <c>GraphicsDevice.Viewport.AspectRatio</c> here and call
+    ///   <see cref="UpdateAspectRatio"/> whenever the window is resized.
+    /// </param>
+    public Camera(float aspectRatio)
+    {
+        Position    = new Vector3(0f, 2f, 10f);
+        Yaw         = 0f;
+        Pitch       = 0f;
+        AspectRatio = aspectRatio;
+        Update();
+    }
+
+    // ── Public API ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Rebuilds View and Projection from the current state.
+    /// Call once per frame (or whenever Position / Yaw / Pitch changes).
+    /// </summary>
+    public void Update()
+    {
+        // Build a rotation matrix from yaw and pitch.
+        // Yaw rotates around the world Y; pitch rotates around the local X.
+        Matrix rotation = Matrix.CreateRotationX(Pitch)
+                        * Matrix.CreateRotationY(Yaw);
+
+        // The camera looks along -Z by default; rotate that forward vector.
+        Vector3 forward = Vector3.Transform(Vector3.Forward, rotation);
+        Vector3 up      = Vector3.Transform(Vector3.Up,      rotation);
+
+        View = Matrix.CreateLookAt(Position, Position + forward, up);
+
+        Projection = Matrix.CreatePerspectiveFieldOfView(
+            FieldOfView,
+            AspectRatio,
+            NearPlane,
+            FarPlane);
+    }
+
+    /// <summary>Moves the camera relative to its current facing direction.</summary>
+    /// <param name="movement">
+    ///   Local-space offset: +X = right, +Y = up, -Z = forward.
+    /// </param>
+    public void Move(Vector3 movement)
+    {
+        Matrix rotation = Matrix.CreateRotationX(Pitch)
+                        * Matrix.CreateRotationY(Yaw);
+
+        Position += Vector3.Transform(movement, rotation);
+    }
+
+    /// <summary>
+    /// Call after a window resize to keep the projection matrix correct.
+    /// </summary>
+    public void UpdateAspectRatio(float aspectRatio)
+    {
+        AspectRatio = aspectRatio;
+        Update();
+    }
+
+    /// <summary>
+    /// Returns a <see cref="BoundingFrustum"/> representing the current
+    /// camera view volume, useful for frustum culling.
+    /// </summary>
+    public BoundingFrustum GetFrustum()
+    {
+        return new BoundingFrustum(ViewProjection);
+    }
+}
+```
+
+### Using the Camera in a Game
+
+```csharp
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Input;
+
+public class CameraDemo : Game
+{
+    private GraphicsDeviceManager _graphics;
+    private Camera _camera;
+    private Model  _model;
+
+    public CameraDemo()
+    {
+        _graphics = new GraphicsDeviceManager(this);
+        Content.RootDirectory = "Content";
+    }
+
+    protected override void Initialize()
+    {
+        _camera = new Camera(GraphicsDevice.Viewport.AspectRatio);
+        Window.ClientSizeChanged += (_, _) =>
+            _camera.UpdateAspectRatio(GraphicsDevice.Viewport.AspectRatio);
+
+        base.Initialize();
+    }
+
+    protected override void LoadContent()
+    {
+        _model = Content.Load<Model>("Models/scene");
+    }
+
+    protected override void Update(GameTime gameTime)
+    {
+        float dt  = (float)gameTime.ElapsedGameTime.TotalSeconds;
+        var   kb  = Keyboard.GetState();
+        var   mouse = Mouse.GetState();
+
+        const float MoveSpeed = 8f;
+        const float LookSpeed = 1.5f;
+
+        // WASD movement relative to camera facing direction.
+        var move = Vector3.Zero;
+        if (kb.IsKeyDown(Keys.W)) move.Z -= MoveSpeed * dt;
+        if (kb.IsKeyDown(Keys.S)) move.Z += MoveSpeed * dt;
+        if (kb.IsKeyDown(Keys.A)) move.X -= MoveSpeed * dt;
+        if (kb.IsKeyDown(Keys.D)) move.X += MoveSpeed * dt;
+        _camera.Move(move);
+
+        // Arrow key look.
+        if (kb.IsKeyDown(Keys.Left))  _camera.Yaw   -= LookSpeed * dt;
+        if (kb.IsKeyDown(Keys.Right)) _camera.Yaw   += LookSpeed * dt;
+        if (kb.IsKeyDown(Keys.Up))    _camera.Pitch -= LookSpeed * dt;
+        if (kb.IsKeyDown(Keys.Down))  _camera.Pitch += LookSpeed * dt;
+
+        _camera.Update();
+
+        base.Update(gameTime);
+    }
+
+    protected override void Draw(GameTime gameTime)
+    {
+        GraphicsDevice.Clear(Color.CornflowerBlue);
+
+        BoundingFrustum frustum = _camera.GetFrustum();
+
+        Matrix[] boneTransforms = new Matrix[_model.Bones.Count];
+        _model.CopyAbsoluteBoneTransformsTo(boneTransforms);
+
+        foreach (ModelMesh mesh in _model.Meshes)
+        {
+            // Frustum cull before setting up any effect state.
+            BoundingSphere ws = mesh.BoundingSphere.Transform(
+                boneTransforms[mesh.ParentBone.Index]);
+
+            if (frustum.Contains(ws) == ContainmentType.Disjoint)
+                continue;
+
+            foreach (BasicEffect effect in mesh.Effects)
+            {
+                effect.World      = boneTransforms[mesh.ParentBone.Index];
+                effect.View       = _camera.View;
+                effect.Projection = _camera.Projection;
+                effect.EnableDefaultLighting();
+            }
+            mesh.Draw();
+        }
+
+        base.Draw(gameTime);
+    }
+}
+```
+
+<Note>
+  The `Move` helper transforms the local movement vector by the camera's rotation before adding it to `Position`, so pressing W always moves in the direction the camera is facing — regardless of yaw or pitch.
+</Note>
+
+---
+
+## Projection Type Comparison
+
+<CardGroup cols={2}>
+  <Card title="Perspective (CreatePerspectiveFieldOfView)" icon="eye">
+    Objects appear smaller as they recede into the distance. Essential for any immersive 3D game. Use `fieldOfView` between 45° and 75° for a natural look.
+  </Card>
+  <Card title="Orthographic (CreateOrthographic)" icon="square">
+    All objects are the same size regardless of depth. Ideal for 2D games, isometric views, top-down strategy games, and UI overlays rendered in 3D space.
+  </Card>
+</CardGroup>

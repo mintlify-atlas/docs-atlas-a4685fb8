@@ -1,0 +1,405 @@
+---
+title: "Playing Sound Effects in MonoGame with SoundEffect"
+sidebarTitle: "Sound Effects"
+description: "Load and play short audio clips in MonoGame using SoundEffect and SoundEffectInstance. Control volume, pitch, pan, looping, and 3D positional audio."
+---
+
+MonoGame's audio system for short clips revolves around two closely related classes: `SoundEffect` and `SoundEffectInstance`. A `SoundEffect` holds the raw audio buffer and acts as a factory — you either call `Play()` directly on it for simple fire-and-forget sounds, or call `CreateInstance()` to get a `SoundEffectInstance` that you control precisely: looping, pausing, resuming, adjusting volume, pitch, and pan at any time, and even positioning the sound in 3D space. For runtime-generated or streamed audio there is also `DynamicSoundEffectInstance`.
+
+## Loading a SoundEffect
+
+Load audio assets through the Content Pipeline, just like textures and fonts:
+
+```csharp
+SoundEffect _jumpSound;
+SoundEffect _explosionSound;
+
+protected override void LoadContent()
+{
+    _jumpSound      = Content.Load<SoundEffect>("Audio/jump");
+    _explosionSound = Content.Load<SoundEffect>("Audio/explosion");
+}
+```
+
+You can also load from a raw WAV stream at runtime:
+
+```csharp
+using var stream = File.OpenRead("Assets/shoot.wav");
+SoundEffect shootSound = SoundEffect.FromStream(stream);
+
+// Or by file path directly
+SoundEffect shootSound = SoundEffect.FromFile("Assets/shoot.wav");
+```
+
+Supported raw formats include 8/16/24/32-bit PCM WAV, MS-ADPCM, and IMA/ADPCM.
+
+---
+
+## Fire-and-Forget Playback
+
+`SoundEffect.Play()` is the simplest path. It grabs a pooled `SoundEffectInstance` internally, plays it, and returns it to the pool when finished. You do not manage lifetime.
+
+```csharp
+// Basic: full volume, no pitch shift, centered
+_jumpSound.Play();
+
+// With volume (0–1), pitch (-1 to +1), and pan (-1 left, 0 center, +1 right)
+_explosionSound.Play(volume: 0.8f, pitch: 0.1f, pan: -0.3f);
+```
+
+`Play()` returns `true` on success and `false` if the platform's simultaneous instance limit has been reached. The pool holds up to **64** instances across all `SoundEffect` objects.
+
+<Tip>
+Fire-and-forget is ideal for short, overlapping sounds like footsteps, gunshots, or UI clicks. For anything that needs to loop or be controlled after playback starts, use `CreateInstance()` instead.
+</Tip>
+
+### Master Volume
+
+`SoundEffect.MasterVolume` is a static property that scales **all** `SoundEffectInstance` playback volumes simultaneously:
+
+```csharp
+// Reduce all sound effect volume to 70 %
+SoundEffect.MasterVolume = 0.7f;
+
+// Silence all sound effects (e.g., when muted in settings)
+SoundEffect.MasterVolume = 0f;
+```
+
+Each instance's `Volume` is multiplied by `MasterVolume` at playback time, so per-instance and global volumes are independent.
+
+---
+
+## Controlled Playback with `SoundEffectInstance`
+
+Call `SoundEffect.CreateInstance()` to get a `SoundEffectInstance` you own. This gives you full control over the sound's lifetime.
+
+```csharp
+SoundEffectInstance _engineInstance;
+
+protected override void LoadContent()
+{
+    var engineSound   = Content.Load<SoundEffect>("Audio/engine");
+    _engineInstance   = engineSound.CreateInstance();
+    _engineInstance.IsLooped = true;   // set BEFORE calling Play()
+    _engineInstance.Volume   = 0.5f;
+}
+```
+
+### Playback Controls
+
+```csharp
+_engineInstance.Play();          // start or resume
+_engineInstance.Pause();         // pause (retains position)
+_engineInstance.Resume();        // resume from paused position
+_engineInstance.Stop();          // stop immediately (rewinds)
+_engineInstance.Stop(immediate: false); // allow release phase before stopping
+```
+
+### Instance Properties
+
+| Property | Type | Range | Description |
+|---|---|---|---|
+| `Volume` | `float` | 0 – 1 | Playback volume (multiplied by `MasterVolume`) |
+| `Pitch` | `float` | -1 – 1 | Pitch shift: -1 = down an octave, 0 = no change, +1 = up an octave |
+| `Pan` | `float` | -1 – 1 | Speaker balance: -1 = left, 0 = center, +1 = right |
+| `IsLooped` | `bool` | — | Loop on completion; must be set before `Play()` |
+| `State` | `SoundState` | — | `Playing`, `Paused`, or `Stopped` |
+
+```csharp
+// Check state before pausing
+if (_engineInstance.State == SoundState.Playing)
+    _engineInstance.Pause();
+
+// Vary pitch based on speed
+_engineInstance.Pitch = MathHelper.Lerp(-0.3f, 0.5f, _speed / _maxSpeed);
+```
+
+### Checking Playback State
+
+```csharp
+switch (_engineInstance.State)
+{
+    case SoundState.Playing:
+        // Update pitch/volume based on game state
+        break;
+    case SoundState.Paused:
+        // Waiting to resume
+        break;
+    case SoundState.Stopped:
+        // Can be restarted with Play()
+        break;
+}
+```
+
+### Disposing Instances
+
+`SoundEffectInstance` implements `IDisposable`. Always dispose when the sound is no longer needed, especially if you create many short-lived instances:
+
+```csharp
+protected override void UnloadContent()
+{
+    _engineInstance?.Dispose();
+}
+```
+
+<Warning>
+When you `Dispose()` a `SoundEffect`, **all** `SoundEffectInstance` objects created from it become invalid. Dispose instances before their parent `SoundEffect`.
+</Warning>
+
+---
+
+## `SoundEffect` Properties
+
+```csharp
+// Duration of the audio clip
+TimeSpan length = _jumpSound.Duration;
+
+// Asset name (set automatically by ContentManager)
+string name = _jumpSound.Name;
+```
+
+---
+
+## 3D Positional Audio
+
+Use `SoundEffectInstance.Apply3D` with `AudioListener` and `AudioEmitter` objects to simulate positional audio. MonoGame computes volume and pan based on the spatial relationship between the listener (usually the camera) and the emitter (the sound source).
+
+### Setup
+
+```csharp
+private AudioListener _listener = new AudioListener();
+private AudioEmitter  _footstepEmitter = new AudioEmitter();
+private SoundEffectInstance _footstepInstance;
+
+protected override void LoadContent()
+{
+    var footstepSfx  = Content.Load<SoundEffect>("Audio/footstep");
+    _footstepInstance = footstepSfx.CreateInstance();
+    _footstepInstance.IsLooped = true;
+}
+```
+
+### Updating Each Frame
+
+```csharp
+protected override void Update(GameTime gameTime)
+{
+    // Update listener to match camera / player
+    _listener.Position = _camera.Position;
+    _listener.Forward  = _camera.Forward;
+    _listener.Up       = Vector3.Up;
+    _listener.Velocity = _camera.Velocity;
+
+    // Update emitter to match the NPC making footsteps
+    _footstepEmitter.Position = _npc.Position;
+    _footstepEmitter.Velocity = _npc.Velocity;
+
+    // Apply 3D — must be called every frame while playing
+    _footstepInstance.Apply3D(_listener, _footstepEmitter);
+
+    base.Update(gameTime);
+}
+```
+
+`Apply3D` adjusts `Volume` and `Pan` automatically based on `SoundEffect.DistanceScale` and `SoundEffect.DopplerScale`:
+
+```csharp
+SoundEffect.DistanceScale = 500f;  // higher = slower volume falloff
+SoundEffect.DopplerScale  = 1.0f;  // 0 = no Doppler effect
+SoundEffect.SpeedOfSound  = 343.5f; // meters per second (default)
+```
+
+<Note>
+3D audio requires a mono (single-channel) source. Stereo `SoundEffect` assets will not produce correct spatial positioning — export footstep and ambient sounds as mono.
+</Note>
+
+---
+
+## Dynamic / Streamed Audio with `DynamicSoundEffectInstance`
+
+`DynamicSoundEffectInstance` lets you feed raw 16-bit PCM data at runtime, which is useful for streaming from disk, procedural audio generation, or decoding custom codecs.
+
+```csharp
+// 44100 Hz stereo
+var dynamicSfx = new DynamicSoundEffectInstance(44100, AudioChannels.Stereo);
+
+// Subscribe to the buffer-needed event
+dynamicSfx.BufferNeeded += OnBufferNeeded;
+
+dynamicSfx.Play();
+```
+
+### Submitting Buffers
+
+```csharp
+private void OnBufferNeeded(object sender, EventArgs e)
+{
+    var instance = (DynamicSoundEffectInstance)sender;
+
+    // Generate or decode the next chunk of PCM data
+    byte[] pcmData = GenerateNextAudioChunk();
+
+    // Submit the entire buffer
+    instance.SubmitBuffer(pcmData);
+
+    // Or submit a slice: SubmitBuffer(buffer, offset, count)
+}
+```
+
+The `BufferNeeded` event fires when the pending buffer count drops to 2 or below, giving you time to submit more data before the audio starves.
+
+```csharp
+// Check how many buffers are queued
+int pending = dynamicSfx.PendingBufferCount;
+
+// Get duration of a given byte count
+TimeSpan duration = dynamicSfx.GetSampleDuration(pcmData.Length);
+
+// Get byte count for a desired duration
+int byteCount = dynamicSfx.GetSampleSizeInBytes(TimeSpan.FromSeconds(0.1));
+```
+
+<Warning>
+`DynamicSoundEffectInstance.IsLooped` cannot be set to `true` — implement looping by re-submitting audio data in the `BufferNeeded` handler.
+</Warning>
+
+---
+
+## Full Examples
+
+<Tabs>
+  <Tab title="One-Shot">
+    Fire-and-forget sound with volume and pitch variation, commonly used for gunshots or impacts:
+
+    ```csharp
+    private SoundEffect _impactSound;
+    private Random _rng = new Random();
+
+    protected override void LoadContent()
+    {
+        _impactSound = Content.Load<SoundEffect>("Audio/impact");
+    }
+
+    private void OnEnemyHit()
+    {
+        // Slight random pitch variation for variety
+        float pitch  = (float)(_rng.NextDouble() * 0.4 - 0.2); // -0.2 to +0.2
+        float volume = 0.85f;
+        float pan    = 0f;
+
+        bool played = _impactSound.Play(volume, pitch, pan);
+        if (!played)
+        {
+            // Too many sounds playing — safe to ignore or log
+        }
+    }
+    ```
+  </Tab>
+  <Tab title="Looping Background">
+    Looping ambient sound with fade-in:
+
+    ```csharp
+    private SoundEffectInstance _ambientLoop;
+    private float _ambientTargetVolume = 0.6f;
+
+    protected override void LoadContent()
+    {
+        var ambientSfx = Content.Load<SoundEffect>("Audio/wind_loop");
+        _ambientLoop          = ambientSfx.CreateInstance();
+        _ambientLoop.IsLooped = true;
+        _ambientLoop.Volume   = 0f;  // start silent, fade in
+        _ambientLoop.Play();
+    }
+
+    protected override void Update(GameTime gameTime)
+    {
+        float dt = (float)gameTime.ElapsedGameTime.TotalSeconds;
+
+        // Fade in over ~2 seconds
+        if (_ambientLoop.Volume < _ambientTargetVolume)
+            _ambientLoop.Volume = Math.Min(
+                _ambientLoop.Volume + dt * 0.5f,
+                _ambientTargetVolume);
+
+        base.Update(gameTime);
+    }
+    ```
+  </Tab>
+  <Tab title="3D Footstep">
+    Positional footstep sound attached to a moving NPC:
+
+    ```csharp
+    private SoundEffectInstance _footstepInstance;
+    private AudioListener _listener  = new AudioListener();
+    private AudioEmitter  _npcEmitter = new AudioEmitter();
+
+    protected override void LoadContent()
+    {
+        var sfx = Content.Load<SoundEffect>("Audio/footstep_mono");
+        _footstepInstance          = sfx.CreateInstance();
+        _footstepInstance.IsLooped = true;
+        _footstepInstance.Play();
+
+        // Scale so volume drops off over 300 units
+        SoundEffect.DistanceScale = 300f;
+    }
+
+    protected override void Update(GameTime gameTime)
+    {
+        // Camera is the listener
+        _listener.Position = _camera.Position;
+        _listener.Forward  = _camera.Forward;
+        _listener.Up       = Vector3.Up;
+
+        // NPC is the emitter
+        _npcEmitter.Position = _npc.WorldPosition;
+        _npcEmitter.Velocity = _npc.Velocity;
+
+        // Update spatial parameters every frame
+        _footstepInstance.Apply3D(_listener, _npcEmitter);
+
+        // Stop footsteps when NPC is idle
+        if (!_npc.IsMoving && _footstepInstance.State == SoundState.Playing)
+            _footstepInstance.Pause();
+        else if (_npc.IsMoving && _footstepInstance.State == SoundState.Paused)
+            _footstepInstance.Resume();
+
+        base.Update(gameTime);
+    }
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## Quick Reference
+
+<CardGroup cols={2}>
+  <Card title="SoundEffect">
+    `Content.Load<SoundEffect>("path")` — load asset  
+    `.Play()` — fire and forget  
+    `.Play(volume, pitch, pan)` — fire with params  
+    `.CreateInstance()` → `SoundEffectInstance`  
+    `.Duration` — `TimeSpan`  
+    `SoundEffect.MasterVolume` — global scale
+  </Card>
+  <Card title="SoundEffectInstance">
+    `.Play()` / `.Pause()` / `.Resume()` / `.Stop()`  
+    `.Volume` (0–1) / `.Pitch` (-1–1) / `.Pan` (-1–1)  
+    `.IsLooped` — set before `Play()`  
+    `.State` → `SoundState`  
+    `.Apply3D(listener, emitter)` — positional audio  
+    `.Dispose()` — release when done
+  </Card>
+  <Card title="DynamicSoundEffectInstance">
+    `new DynamicSoundEffectInstance(sampleRate, channels)`  
+    `.SubmitBuffer(byte[])` — push PCM data  
+    `.BufferNeeded` event — request more data  
+    `.PendingBufferCount` — queued buffer count
+  </Card>
+  <Card title="3D Audio Globals">
+    `SoundEffect.DistanceScale` — falloff rate  
+    `SoundEffect.DopplerScale` — Doppler intensity  
+    `SoundEffect.SpeedOfSound` — m/s (default 343.5)
+  </Card>
+</CardGroup>

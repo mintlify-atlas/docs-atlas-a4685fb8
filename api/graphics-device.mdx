@@ -1,0 +1,248 @@
+---
+title: "GraphicsDevice and GraphicsDeviceManager API Reference"
+sidebarTitle: "GraphicsDevice"
+description: "API reference for MonoGame's GraphicsDevice rendering pipeline and GraphicsDeviceManager configuration — clear, present, render targets, viewport, and device state."
+---
+
+MonoGame exposes two closely related classes for graphics. `GraphicsDeviceManager` is the configuration layer — you create one in your `Game` constructor to specify back buffer size, profile, and fullscreen state. It manages creating and destroying the underlying `GraphicsDevice`. `GraphicsDevice` is the raw rendering API — you call `Clear`, set render states, bind buffers, and issue draw calls through it.
+
+```csharp
+// In Game constructor
+var gdm = new GraphicsDeviceManager(this);
+gdm.PreferredBackBufferWidth  = 1920;
+gdm.PreferredBackBufferHeight = 1080;
+gdm.IsFullScreen = false;
+
+// In Draw()
+GraphicsDevice.Clear(Color.CornflowerBlue);
+```
+
+## Namespace
+
+```
+Microsoft.Xna.Framework
+Microsoft.Xna.Framework.Graphics   // GraphicsDevice
+```
+
+---
+
+## GraphicsDeviceManager
+
+`GraphicsDeviceManager` implements `IGraphicsDeviceService`, `IGraphicsDeviceManager`, and `IDisposable`. You must create exactly one per `Game`.
+
+### Constructor
+
+<ParamField path="game" type="Game" required>
+  The `Game` instance to attach. Throws `ArgumentNullException` if `null`, or `ArgumentException` if a `GraphicsDeviceManager` is already registered.
+</ParamField>
+
+```csharp
+public GraphicsDeviceManager(Game game)
+```
+
+The constructor registers the manager with `game.Services` under both `IGraphicsDeviceManager` and `IGraphicsDeviceService`. Default back buffer size is taken from the window's client bounds (landscape-oriented), default profile is `GraphicsProfile.Reach`.
+
+### Static Properties
+
+| Property | Type | Value | Description |
+|---|---|---|---|
+| `DefaultBackBufferWidth` | `int` | `800` | Fallback width used when window bounds are unavailable. |
+| `DefaultBackBufferHeight` | `int` | `480` | Fallback height. |
+
+### Properties
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `GraphicsDevice` | `GraphicsDevice` | *(created lazily)* | The active `GraphicsDevice`. `null` before `ApplyChanges()` or `Run()`. |
+| `GraphicsProfile` | `GraphicsProfile` | `Reach` | Feature level: `Reach` (limited, mobile-friendly) or `HiDef` (desktop-grade). Setting this marks the device as needing a re-create. |
+| `IsFullScreen` | `bool` | `false` | Desired fullscreen state. Call `ApplyChanges()` to take effect after startup. No-op on platforms that don't support windowed mode. |
+| `HardwareModeSwitch` | `bool` | `true` | `true` = exclusive fullscreen (slow switch, better performance). `false` = borderless window (fast switch). |
+| `PreferMultiSampling` | `bool` | `false` | When `true`, requests the maximum supported MSAA sample count for the back buffer. |
+| `PreferredBackBufferWidth` | `int` | *(window width)* | Desired back buffer width in pixels. |
+| `PreferredBackBufferHeight` | `int` | *(window height)* | Desired back buffer height in pixels. |
+| `PreferredBackBufferFormat` | `SurfaceFormat` | `Color` | Pixel format of the back buffer. |
+| `PreferredDepthStencilFormat` | `DepthFormat` | `Depth24` | Depth/stencil buffer format. |
+| `SynchronizeWithVerticalRetrace` | `bool` | `true` | Enables V-Sync. Disabling may cause tearing but allows uncapped frame rates. |
+| `PreferHalfPixelOffset` | `bool` | `false` | Enables DX9-style half-pixel UV offset for XNA compatibility. **Must be set before `GraphicsDevice` is created.** |
+| `SupportedOrientations` | `DisplayOrientation` | `Default` | Allowed display orientations (mobile platforms only). |
+
+### Methods
+
+| Method | Description |
+|---|---|
+| `ApplyChanges()` | Applies any pending property changes to the `GraphicsDevice`. Creates the device if it doesn't yet exist. If the `GraphicsProfile` changed, the device is destroyed and recreated. |
+| `ToggleFullScreen()` | Flips `IsFullScreen` and immediately calls `ApplyChanges()`. |
+| `Dispose()` | Disposes the underlying `GraphicsDevice` and releases resources. |
+
+### Events
+
+| Event | Type | Description |
+|---|---|---|
+| `PreparingDeviceSettings` | `EventHandler<PreparingDeviceSettingsEventArgs>` | Raised by `ApplyChanges()` just before settings are applied. Modify `PresentationParameters` here for fine-grained control (e.g., override `MultiSampleCount`). |
+| `DeviceCreated` | `EventHandler<EventArgs>` | Raised after a new `GraphicsDevice` is created. |
+| `DeviceDisposing` | `EventHandler<EventArgs>` | Raised before the current `GraphicsDevice` is disposed. |
+| `DeviceResetting` | `EventHandler<EventArgs>` | Raised before a device reset. |
+| `DeviceReset` | `EventHandler<EventArgs>` | Raised after a device reset. Re-create any device-dependent resources here. |
+| `Disposed` | `EventHandler<EventArgs>` | Raised when the `GraphicsDeviceManager` itself is disposed. |
+
+### Example
+
+```csharp
+public MyGame()
+{
+    var gdm = new GraphicsDeviceManager(this);
+    gdm.PreferredBackBufferWidth  = 1280;
+    gdm.PreferredBackBufferHeight = 720;
+    gdm.GraphicsProfile           = GraphicsProfile.HiDef;
+    gdm.SynchronizeWithVerticalRetrace = true;
+
+    // Override multisampling count via the event
+    gdm.PreparingDeviceSettings += (s, e) =>
+        e.GraphicsDeviceInformation.PresentationParameters.MultiSampleCount = 4;
+}
+```
+
+---
+
+## GraphicsDevice
+
+`GraphicsDevice` is the core rendering API. It implements `IDisposable` and is located in `Microsoft.Xna.Framework.Graphics`. You do not construct it directly — it is created and managed by `GraphicsDeviceManager`.
+
+### Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `Adapter` | `GraphicsAdapter` | The physical display adapter this device is bound to. |
+| `GraphicsProfile` | `GraphicsProfile` | The feature level the device was created with. |
+| `PresentationParameters` | `PresentationParameters` | Current back buffer configuration (width, height, format, depth format, fullscreen, etc.). |
+| `DisplayMode` | `DisplayMode` | Current display resolution and refresh rate. |
+| `GraphicsDeviceStatus` | `GraphicsDeviceStatus` | Current device health (always `Normal` in MonoGame). |
+| `Viewport` | `Viewport` | The active viewport. Setting this directly updates the GPU viewport. Automatically reset when a render target is bound. |
+| `ScissorRectangle` | `Rectangle` | The scissor clip rectangle. Used when `RasterizerState.ScissorTestEnable` is `true`. |
+| `BlendState` | `BlendState` | Current blend state. Default: `BlendState.Opaque`. |
+| `DepthStencilState` | `DepthStencilState` | Current depth/stencil state. Default: `DepthStencilState.Default`. |
+| `RasterizerState` | `RasterizerState` | Current rasterizer state. Default: `RasterizerState.CullCounterClockwise`. |
+| `BlendFactor` | `Color` | Per-pass blend factor color (used with `BlendState.BlendFactor`). |
+| `RenderTargetCount` | `int` | Number of currently bound render targets. |
+| `Textures` | `TextureCollection` | Pixel shader texture slots `[0..N]`. |
+| `SamplerStates` | `SamplerStateCollection` | Pixel shader sampler states `[0..N]`. |
+| `VertexTextures` | `TextureCollection` | Vertex shader texture slots (HiDef profile only). |
+| `VertexSamplerStates` | `SamplerStateCollection` | Vertex shader sampler states. |
+| `Metrics` | `GraphicsMetrics` | Per-frame rendering statistics (draw calls, primitives, clear calls, etc.). Reset each `Present`. |
+| `IsDisposed` | `bool` | `true` after the device has been disposed. |
+| `UseHalfPixelOffset` | `bool` | Reflects `GraphicsDeviceManager.PreferHalfPixelOffset`. Read-only. |
+
+### Clear Methods
+
+```csharp
+// Clear all buffers (color, depth, stencil) to the given color
+public void Clear(Color color)
+
+// Selectively clear specified buffers
+public void Clear(ClearOptions options, Color color, float depth, int stencil)
+public void Clear(ClearOptions options, Vector4 color, float depth, int stencil)
+```
+
+`ClearOptions` is a `[Flags]` enum: `Target` (color), `DepthBuffer`, `Stencil`.
+
+### Present
+
+```csharp
+public void Present()
+```
+
+Flips the back buffer to the screen. Throws `InvalidOperationException` if a render target is still bound. Normally called by `GraphicsDeviceManager.EndDraw()` which is triggered after `Game.Draw()`.
+
+### Reset
+
+```csharp
+public void Reset()
+public void Reset(PresentationParameters presentationParameters)
+```
+
+Resets the device with current or new `PresentationParameters`. Raises `DeviceResetting` then `DeviceReset`.
+
+### Render Targets
+
+```csharp
+public void SetRenderTarget(RenderTarget2D renderTarget)
+public void SetRenderTarget(RenderTargetCube renderTarget, CubeMapFace cubeMapFace)
+public void SetRenderTargets(params RenderTargetBinding[] renderTargets)
+public RenderTargetBinding[] GetRenderTargets()
+public void GetRenderTargets(RenderTargetBinding[] outTargets)
+```
+
+Pass `null` to `SetRenderTarget` to restore the back buffer. Automatically adjusts `Viewport` and `ScissorRectangle` to the render target size.
+
+<Warning>
+You must call `SetRenderTarget(null)` before calling `Present()`. Failing to do so throws `InvalidOperationException`.
+</Warning>
+
+### Vertex Buffers and Index Buffers
+
+```csharp
+public void SetVertexBuffer(VertexBuffer vertexBuffer)
+public void SetVertexBuffer(VertexBuffer vertexBuffer, int vertexOffset)
+public void SetVertexBuffers(params VertexBufferBinding[] vertexBuffers)
+public IndexBuffer Indices { get; set; }
+```
+
+### Draw Calls
+
+| Method | Signature | Description |
+|---|---|---|
+| `DrawPrimitives` | `void DrawPrimitives(PrimitiveType primitiveType, int vertexStart, int primitiveCount)` | Draw from bound vertex buffers without an index buffer. |
+| `DrawIndexedPrimitives` | `void DrawIndexedPrimitives(PrimitiveType, int baseVertex, int startIndex, int primitiveCount)` | Indexed draw from bound vertex + index buffers. |
+| `DrawUserPrimitives<T>` | `void DrawUserPrimitives<T>(PrimitiveType, T[] vertexData, int vertexOffset, int primitiveCount)` | Draw from a CPU-side vertex array. No vertex buffer needed. |
+| `DrawUserIndexedPrimitives<T>` | `void DrawUserIndexedPrimitives<T>(PrimitiveType, T[] verts, int vOffset, int nVerts, short[] indices, int iOffset, int primCount)` | Draw from CPU arrays with 16-bit indices. |
+| `DrawUserIndexedPrimitives<T>` | *(int[] overload)* | Draw from CPU arrays with 32-bit indices. |
+| `DrawInstancedPrimitives` | `void DrawInstancedPrimitives(PrimitiveType, int baseVertex, int startIndex, int primitiveCount, int instanceCount)` | GPU instancing. |
+
+`PrimitiveType` values: `TriangleList`, `TriangleStrip`, `LineList`, `LineStrip`, `PointList`.
+
+### Back Buffer Read-back
+
+```csharp
+public void GetBackBufferData<T>(T[] data)
+public void GetBackBufferData<T>(T[] data, int startIndex, int elementCount)
+public void GetBackBufferData<T>(Rectangle? rect, T[] data, int startIndex, int elementCount)
+```
+
+Reads pixel data from the back buffer into a CPU-side array. Slow — avoid in hot paths.
+
+### Events
+
+| Event | Type | Description |
+|---|---|---|
+| `DeviceLost` | `EventHandler<EventArgs>` | Fired when the device is about to be lost (e.g., alt-tab on some platforms). |
+| `DeviceReset` | `EventHandler<EventArgs>` | Fired after the device has been reset. Re-create render targets and other device resources here. |
+| `DeviceResetting` | `EventHandler<EventArgs>` | Fired before the device resets. Release device-dependent resources here. |
+| `ResourceCreated` | `EventHandler<ResourceCreatedEventArgs>` | Fired when a new graphics resource is created. |
+| `ResourceDestroyed` | `EventHandler<ResourceDestroyedEventArgs>` | Fired when a graphics resource is destroyed. |
+| `Disposing` | `EventHandler<EventArgs>` | Fired when `Dispose()` is called or the device is finalized. |
+
+### Example — Off-screen Render Target
+
+```csharp
+RenderTarget2D _rt;
+
+protected override void LoadContent()
+{
+    _rt = new RenderTarget2D(GraphicsDevice, 512, 512);
+}
+
+protected override void Draw(GameTime gameTime)
+{
+    // Draw scene to texture
+    GraphicsDevice.SetRenderTarget(_rt);
+    GraphicsDevice.Clear(Color.Transparent);
+    // ... draw calls ...
+
+    // Restore back buffer and blit
+    GraphicsDevice.SetRenderTarget(null);
+    GraphicsDevice.Clear(Color.Black);
+    _spriteBatch.Begin();
+    _spriteBatch.Draw(_rt, Vector2.Zero, Color.White);
+    _spriteBatch.End();
+}
+```

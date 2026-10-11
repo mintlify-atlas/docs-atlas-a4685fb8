@@ -1,0 +1,304 @@
+---
+title: "Content Management: Loading and Unloading Game Assets"
+sidebarTitle: "Content Management"
+description: "ContentManager handles loading typed game assets from .xnb files compiled by the MonoGame Content Pipeline. Learn to load, share, and unload assets correctly."
+---
+
+Every sprite, sound, font, and shader in a MonoGame project travels through the Content Pipeline: source files (PNG, WAV, FBX, HLSL, …) are compiled at build time into platform-optimised `.xnb` binary files. At runtime, `ContentManager` reads those `.xnb` files, deserialises them into strongly-typed managed objects, and caches them so repeated calls return the same instance. Understanding `ContentManager`'s lifecycle prevents common pitfalls like double-loading assets, leaking GPU memory, or crashing on a disposed manager.
+
+---
+
+## `ContentManager` Basics
+
+The default `ContentManager` is wired up by `Game` automatically and exposed as `Content`. Its only mandatory configuration step is setting `RootDirectory`:
+
+```csharp
+public Game1()
+{
+    _graphics = new GraphicsDeviceManager(this);
+    Content.RootDirectory = "Content"; // relative to the executable
+}
+```
+
+| Member | Signature | Notes |
+|---|---|---|
+| `RootDirectory` | `string` | Base path for all asset lookups |
+| `Load<T>` | `T Load<T>(string assetName)` | Load (or return cached) asset |
+| `Unload` | `void Unload()` | Dispose all loaded assets |
+| `UnloadAsset` | `void UnloadAsset(string assetName)` | Dispose one asset by name |
+| `UnloadAssets` | `void UnloadAssets(IList<string> assetNames)` | Dispose a batch of named assets |
+
+---
+
+## Asset Name Rules
+
+Asset names passed to `Load<T>` follow these conventions:
+
+- **Relative to `RootDirectory`** — if `RootDirectory = "Content"` and the file on disk is `Content/Textures/player.xnb`, the asset name is `"Textures/player"`.
+- **No file extension** — never include `.xnb`.
+- **Forward slashes** — use `/` for subdirectories on all platforms; `ContentManager` internally normalises backslashes to forward slashes.
+- **Case-insensitive** — the internal dictionary uses `StringComparer.OrdinalIgnoreCase`.
+
+```csharp
+// ✅ Correct
+Content.Load<Texture2D>("Textures/player");
+Content.Load<SpriteFont>("Fonts/default");
+
+// ❌ Wrong — extension included
+Content.Load<Texture2D>("Textures/player.xnb");
+
+// ❌ Wrong — absolute path
+Content.Load<Texture2D>("C:/Game/Content/Textures/player");
+```
+
+---
+
+## Loading Common Asset Types
+
+<Tabs>
+  <Tab title="Texture2D">
+    ```csharp
+    Texture2D playerSprite  = Content.Load<Texture2D>("Textures/player");
+    Texture2D tileSheet     = Content.Load<Texture2D>("Textures/tiles");
+    Texture2D uiBackground  = Content.Load<Texture2D>("UI/panel_bg");
+    ```
+
+    <Tip>
+      `ContentManager` can also load raw PNG/JPG/BMP image files as `Texture2D` without going through the Content Pipeline — just omit the extension and ensure the file exists next to the executable.
+    </Tip>
+  </Tab>
+  <Tab title="SpriteFont">
+    ```csharp
+    SpriteFont defaultFont = Content.Load<SpriteFont>("Fonts/default");
+    SpriteFont largeFont   = Content.Load<SpriteFont>("Fonts/large");
+
+    // Usage
+    _spriteBatch.DrawString(defaultFont, "Hello!", Vector2.Zero, Color.White);
+    ```
+  </Tab>
+  <Tab title="SoundEffect / Song">
+    ```csharp
+    SoundEffect jumpSfx  = Content.Load<SoundEffect>("Audio/jump");
+    SoundEffect coinSfx  = Content.Load<SoundEffect>("Audio/coin");
+    Song        bgMusic  = Content.Load<Song>("Music/level1_theme");
+
+    // Play immediately
+    jumpSfx.Play();
+    MediaPlayer.Play(bgMusic);
+    ```
+  </Tab>
+  <Tab title="Effect (Shader)">
+    ```csharp
+    Effect blurEffect  = Content.Load<Effect>("Shaders/blur");
+    Effect waveEffect  = Content.Load<Effect>("Shaders/wave");
+
+    // Apply parameters and use in a SpriteBatch pass
+    blurEffect.Parameters["BlurAmount"].SetValue(2.5f);
+    _spriteBatch.Begin(effect: blurEffect);
+    ```
+  </Tab>
+  <Tab title="Model">
+    ```csharp
+    Model shipModel    = Content.Load<Model>("Models/ship");
+    Model terrainModel = Content.Load<Model>("Models/terrain");
+
+    // Draw with default BasicEffect transforms
+    foreach (var mesh in shipModel.Meshes)
+    {
+        foreach (BasicEffect effect in mesh.Effects)
+        {
+            effect.World      = _shipWorld;
+            effect.View       = _camera.View;
+            effect.Projection = _camera.Projection;
+        }
+        mesh.Draw();
+    }
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## Asset Caching
+
+`ContentManager` keeps a `Dictionary<string, object>` of every loaded asset. Calling `Load<T>` a second time with the same name returns the **same object instance** — no disk read, no reallocation.
+
+```csharp
+Texture2D a = Content.Load<Texture2D>("Textures/player");
+Texture2D b = Content.Load<Texture2D>("Textures/player");
+
+Console.WriteLine(object.ReferenceEquals(a, b)); // true
+```
+
+<Note>
+  Because assets are cached, you can safely call `Load<T>` from multiple places (e.g., in a `DrawableGameComponent.LoadContent()`) without worrying about wasting memory or reloading from disk.
+</Note>
+
+---
+
+## Unloading Assets
+
+### `Content.Unload()` — All Assets
+
+`Unload()` disposes every `IDisposable` asset (textures, sounds, effects, …) and clears the cache. Call it when leaving a scene or when the game exits.
+
+```csharp
+protected override void UnloadContent()
+{
+    Content.Unload(); // disposes all assets loaded through this ContentManager
+}
+```
+
+<Warning>
+  After `Unload()`, any object reference you held (e.g. a `Texture2D` field) is now disposed. Do not use those references again — reload the assets if you need them later.
+</Warning>
+
+### `Content.UnloadAsset(assetName)` — Single Asset
+
+Disposes and removes exactly one asset from the cache. The asset name must match the original `Load<T>` call exactly (case-insensitive, normalised to forward slashes).
+
+```csharp
+// When the player leaves a level, free the level-specific texture:
+Content.UnloadAsset("Textures/level2_bg");
+
+// The texture is now disposed; loading it again performs a fresh disk read.
+```
+
+### `Content.UnloadAssets(assetNames)` — Batch Removal
+
+```csharp
+var toRemove = new[] { "Textures/level2_bg", "Audio/level2_music" };
+Content.UnloadAssets(toRemove);
+```
+
+---
+
+## Multiple `ContentManager` Instances
+
+The default `Content` property is shared by everything in your game. For large projects, create one `ContentManager` per logical group (e.g., one per level) so you can unload an entire group atomically without affecting the rest.
+
+```csharp
+public class LevelManager
+{
+    private ContentManager _levelContent;
+    private readonly IServiceProvider _services;
+
+    public LevelManager(IServiceProvider services)
+    {
+        _services = services;
+    }
+
+    public void LoadLevel(int levelIndex)
+    {
+        // Dispose the previous level's assets
+        _levelContent?.Unload();
+        _levelContent?.Dispose();
+
+        _levelContent = new ContentManager(_services, "Content");
+
+        // Load only this level's assets
+        _tilemap = _levelContent.Load<Texture2D>($"Levels/level{levelIndex}/tilemap");
+        _bgMusic = _levelContent.Load<Song>($"Levels/level{levelIndex}/music");
+    }
+
+    public void UnloadLevel()
+    {
+        _levelContent?.Unload();
+        _levelContent?.Dispose();
+        _levelContent = null;
+    }
+}
+```
+
+<Tip>
+  `ContentManager`'s constructor accepts any `IServiceProvider` — pass `Game.Services` to give the new manager access to the `IGraphicsDeviceService` it needs for GPU resources.
+</Tip>
+
+---
+
+## Level-Based Content Loading Pattern
+
+A clean pattern for open-world or chapter-based games:
+
+<Steps>
+  <Step title="Create a shared ContentManager for global assets">
+    ```csharp
+    // Loaded once in Game.LoadContent() — never unloaded mid-session
+    _globalContent = new ContentManager(Services, "Content");
+    _uiFont        = _globalContent.Load<SpriteFont>("Fonts/ui");
+    _cursorTexture = _globalContent.Load<Texture2D>("UI/cursor");
+    ```
+  </Step>
+
+  <Step title="Create a per-level ContentManager">
+    ```csharp
+    private ContentManager _levelContent;
+
+    public void EnterLevel(string levelName)
+    {
+        _levelContent?.Unload();
+        _levelContent?.Dispose();
+
+        _levelContent = new ContentManager(Services, "Content");
+        _levelTilemap = _levelContent.Load<Texture2D>($"Levels/{levelName}/tilemap");
+        _levelTheme   = _levelContent.Load<Song>($"Levels/{levelName}/theme");
+
+        MediaPlayer.Play(_levelTheme);
+    }
+    ```
+  </Step>
+
+  <Step title="Unload on level exit">
+    ```csharp
+    public void ExitLevel()
+    {
+        MediaPlayer.Stop();
+        _levelContent?.Unload();   // disposes Song, Texture2D, etc.
+        _levelContent?.Dispose();
+        _levelContent = null;
+    }
+    ```
+  </Step>
+</Steps>
+
+---
+
+## `ResourceContentManager` (Embedded Assets)
+
+For tools, editors, or libraries that ship their own assets inside a `.dll`, `ResourceContentManager` reads from a `System.Resources.ResourceManager` instead of from disk. Derive from it in the same way as `ContentManager`.
+
+```csharp
+using Microsoft.Xna.Framework.Content;
+using System.Resources;
+
+public class EmbeddedContent : ResourceContentManager
+{
+    public EmbeddedContent(IServiceProvider services)
+        : base(services, MyAssemblyResources.ResourceManager)
+    { }
+}
+
+// Usage
+var embedded = new EmbeddedContent(Services);
+var icon = embedded.Load<Texture2D>("ToolIcon");
+```
+
+---
+
+## `TitleContainer.OpenStream` (Raw File Access)
+
+To load non-pipeline files (JSON configs, CSV data, custom binary formats) without the content system, use `TitleContainer.OpenStream`. It resolves paths relative to the game's executable directory and works cross-platform including on Android and iOS asset bundles.
+
+```csharp
+using Microsoft.Xna.Framework;
+using System.IO;
+using System.Text.Json;
+
+// Load a JSON configuration file sitting next to the executable
+using var stream = TitleContainer.OpenStream("config.json");
+var config = JsonSerializer.Deserialize<GameConfig>(stream);
+```
+
+<Warning>
+  `TitleContainer.OpenStream` only accepts **relative** paths. Do not pass absolute paths or paths starting with `..`.
+</Warning>

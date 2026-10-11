@@ -1,0 +1,432 @@
+---
+title: "mgfxc: Compile HLSL Shaders for MonoGame"
+sidebarTitle: "mgfxc"
+description: "mgfxc compiles MonoGame Effect (.fx) HLSL shader files into cross-platform .mgfx binaries. Learn installation, usage, platform targets, and the Effect file format."
+---
+
+`mgfxc` (MonoGame FX Compiler) is the command-line tool that compiles MonoGame Effect (`.fx`) files written in HLSL into cross-platform `.mgfxo` binaries. These compiled binaries are consumed by MonoGame's `Effect` class at runtime and drive the GPU rendering pipeline — vertex transforms, fragment shading, post-processing, and any other programmable stage your game requires. By compiling shaders at build time rather than at runtime, `mgfxc` catches syntax errors early and produces tightly-optimised platform-specific bytecode without requiring shader compiler libraries to be shipped with your game.
+
+<CardGroup cols={2}>
+  <Card title="HLSL input" icon="code">
+    Write shaders once in HLSL with `technique` / `pass` blocks — the same format MonoGame has used since its XNA roots.
+  </Card>
+  <Card title="Cross-platform output" icon="globe">
+    Target OpenGL (GLSL), DirectX 11 (DXBC), DirectX 12 (DXIL), Vulkan (SPIR-V), and console-specific formats.
+  </Card>
+  <Card title="Pipeline integration" icon="conveyor-belt">
+    `.fx` files added to the MGCB Editor with `EffectImporter` are compiled automatically by `mgfxc` during every content build.
+  </Card>
+  <Card title="Header output" icon="file-code">
+    Use a `.h` output extension to generate a C-style byte-array header for embedding compiled shaders directly in source.
+  </Card>
+</CardGroup>
+
+---
+
+## Installation
+
+`mgfxc` is distributed as a .NET global tool. Requires the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet) or later.
+
+```bash
+dotnet tool install --global dotnet-mgfxc
+```
+
+To update an existing installation:
+
+```bash
+dotnet tool update --global dotnet-mgfxc
+```
+
+Verify the installation:
+
+```bash
+mgfxc
+```
+
+<Warning>
+  **macOS and Linux:** `mgfxc` relies on the DirectX shader compiler for HLSL compilation. On non-Windows platforms, this requires **Wine**. See the [Wine setup](#macos--linux-wine-requirement) section below before attempting to compile shaders.
+</Warning>
+
+---
+
+## Basic Usage
+
+```bash
+mgfxc <SourceFile> <OutputFile> [options]
+```
+
+Both `<SourceFile>` and `<OutputFile>` are **required** positional arguments. The most common invocation:
+
+```bash
+mgfxc MyShader.fx MyShader.mgfxo /Profile:OpenGL
+```
+
+To compile for Windows DirectX 11:
+
+```bash
+mgfxc MyShader.fx MyShader.mgfxo /Profile:DirectX_11
+```
+
+To produce a C header file instead of a binary:
+
+```bash
+mgfxc MyShader.fx MyShader.h /Profile:OpenGL
+```
+
+The generated `.h` file contains a `static const unsigned char` array of the compiled bytecode, useful for embedding shaders in C or C++ native code.
+
+---
+
+## Profiles (Platform Targets)
+
+The `/Profile:` option controls which shader backend `mgfxc` targets. Each profile corresponds to one or more MonoGame target platforms:
+
+| Profile | Target Platforms | Shader Backend |
+|---|---|---|
+| `OpenGL` | DesktopGL, macOS, Linux, Android, iOS, Web, RaspberryPi | GLSL (via MojoShader) |
+| `DirectX_11` | WindowsDX (Windows + DirectX 10/11) | DXBC (Direct3D 11 bytecode) |
+| `DirectX_12` | WindowsDX12 | DXIL (Direct3D 12 bytecode) |
+| `Vulkan` | DesktopVK | SPIR-V |
+
+<Note>
+  Console profiles (PlayStation 4, PlayStation 5, Xbox, Nintendo Switch) are also supported but require a registered developer account with the respective platform holder. Refer to the [MonoGame console access documentation](https://docs.monogame.net/articles/console_access.html) for details.
+</Note>
+
+The profile defaults to `OpenGL` if `/Profile:` is not specified.
+
+---
+
+## Optional Flags
+
+| Flag | Description |
+|---|---|
+| `/Profile:<name>` | Target shader profile (see table above). |
+| `/Debug` | Include extra debug information in the compiled effect (shader variable names, line numbers). Useful during development; should be omitted for release builds. |
+| `/Defines:<value>` | Semicolon-delimited list of preprocessor defines passed to the HLSL compiler, e.g. `/Defines:ENABLE_FOG;HIGH_QUALITY`. |
+
+---
+
+## The `.fx` File Format
+
+MonoGame effect files follow the standard DirectX Effects framework syntax: HLSL shader code wrapped in `technique` and `pass` blocks. A single `.fx` file can contain multiple techniques, each with one or more passes.
+
+### Structure
+
+```hlsl
+// Shader parameters — exposed to C# via effect.Parameters["Name"]
+float4x4 WorldViewProjection;
+Texture2D SpriteTexture;
+sampler2D SpriteSampler = sampler_state
+{
+    Texture = <SpriteTexture>;
+};
+
+// Vertex shader input / output structs
+struct VertexInput
+{
+    float4 Position : POSITION0;
+    float2 TexCoord : TEXCOORD0;
+};
+
+struct PixelInput
+{
+    float4 Position : SV_POSITION;
+    float2 TexCoord : TEXCOORD0;
+};
+
+// Vertex shader
+PixelInput VS(VertexInput input)
+{
+    PixelInput output;
+    output.Position = mul(input.Position, WorldViewProjection);
+    output.TexCoord = input.TexCoord;
+    return output;
+}
+
+// Pixel (fragment) shader
+float4 PS(PixelInput input) : COLOR0
+{
+    return tex2D(SpriteSampler, input.TexCoord);
+}
+
+// Technique declaration
+technique BasicEffect
+{
+    pass P0
+    {
+        VertexShader = compile vs_3_0 VS();
+        PixelShader  = compile ps_3_0 PS();
+    }
+}
+```
+
+<Note>
+  For the `OpenGL` profile, use shader model `vs_3_0` / `ps_3_0`. For `DirectX_11`, you can use `vs_4_0_level_9_1` through `vs_5_0` and their `ps_*` counterparts. MonoGame's pipeline automatically translates DXBC to GLSL when targeting OpenGL via MojoShader.
+</Note>
+
+---
+
+## Grayscale Post-Processing Shader Example
+
+The following is a minimal, fully working grayscale post-processing effect and the C# code to apply it using `SpriteBatch`.
+
+### The Shader (`Grayscale.fx`)
+
+```hlsl
+// Grayscale post-processing effect for MonoGame
+// Usage: render your scene to a RenderTarget2D, then draw it
+// through SpriteBatch with this effect applied.
+
+Texture2D ScreenTexture;
+sampler2D ScreenSampler = sampler_state
+{
+    Texture   = <ScreenTexture>;
+    MinFilter = Linear;
+    MagFilter = Linear;
+    AddressU  = Clamp;
+    AddressV  = Clamp;
+};
+
+// How much gray to mix in: 0.0 = original colour, 1.0 = fully grayscale.
+float GrayscaleAmount = 1.0;
+
+struct PixelInput
+{
+    float4 Position : SV_POSITION;
+    float4 Color    : COLOR0;
+    float2 TexCoord : TEXCOORD0;
+};
+
+float4 PS_Grayscale(PixelInput input) : COLOR0
+{
+    float4 color = tex2D(ScreenSampler, input.TexCoord) * input.Color;
+
+    // Standard luminance weights (ITU-R BT.601)
+    float luminance = dot(color.rgb, float3(0.299, 0.587, 0.114));
+    float3 gray     = float3(luminance, luminance, luminance);
+
+    color.rgb = lerp(color.rgb, gray, GrayscaleAmount);
+    return color;
+}
+
+technique Grayscale
+{
+    pass P0
+    {
+        PixelShader = compile ps_3_0 PS_Grayscale();
+    }
+}
+```
+
+Compile it for DesktopGL:
+
+```bash
+mgfxc Grayscale.fx Grayscale.mgfxo /Profile:OpenGL
+```
+
+Or compile for WindowsDX:
+
+```bash
+mgfxc Grayscale.fx Grayscale.mgfxo /Profile:DirectX_11
+```
+
+### Applying the Effect in C#
+
+```csharp
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+
+public class MyGame : Game
+{
+    private GraphicsDeviceManager _graphics;
+    private SpriteBatch _spriteBatch;
+    private Effect _grayscaleEffect;
+    private RenderTarget2D _renderTarget;
+
+    public MyGame()
+    {
+        _graphics = new GraphicsDeviceManager(this);
+        Content.RootDirectory = "Content";
+    }
+
+    protected override void LoadContent()
+    {
+        _spriteBatch = new SpriteBatch(GraphicsDevice);
+
+        // Load the compiled effect — omit the .mgfxo extension.
+        // If placed in Content/Shaders/Grayscale.fx in your MGCB project,
+        // the asset name is "Shaders/Grayscale".
+        _grayscaleEffect = Content.Load<Effect>("Shaders/Grayscale");
+
+        _renderTarget = new RenderTarget2D(
+            GraphicsDevice,
+            GraphicsDevice.PresentationParameters.BackBufferWidth,
+            GraphicsDevice.PresentationParameters.BackBufferHeight);
+    }
+
+    protected override void Draw(GameTime gameTime)
+    {
+        // --- Pass 1: render the scene to the render target ---
+        GraphicsDevice.SetRenderTarget(_renderTarget);
+        GraphicsDevice.Clear(Color.CornflowerBlue);
+
+        _spriteBatch.Begin();
+        // Draw your world / sprites here ...
+        _spriteBatch.End();
+
+        // --- Pass 2: draw the render target through the grayscale effect ---
+        GraphicsDevice.SetRenderTarget(null);
+        GraphicsDevice.Clear(Color.Black);
+
+        // Set effect parameters before drawing
+        _grayscaleEffect.Parameters["GrayscaleAmount"].SetValue(1.0f);
+
+        _spriteBatch.Begin(effect: _grayscaleEffect);
+        _spriteBatch.Draw(_renderTarget, Vector2.Zero, Color.White);
+        _spriteBatch.End();
+
+        base.Draw(gameTime);
+    }
+}
+```
+
+---
+
+## Using Effect Parameters
+
+Effect parameters declared in HLSL are accessible from C# through the `Effect.Parameters` collection. The parameter name in C# must match exactly the variable name in the `.fx` file.
+
+```csharp
+// Set a float parameter
+effect.Parameters["GrayscaleAmount"].SetValue(0.5f);
+
+// Set a matrix parameter
+effect.Parameters["WorldViewProjection"].SetValue(world * view * projection);
+
+// Set a texture parameter
+effect.Parameters["ScreenTexture"].SetValue(renderTarget);
+
+// Set a Vector2 parameter
+effect.Parameters["TexelSize"].SetValue(new Vector2(1f / width, 1f / height));
+```
+
+<Tip>
+  Cache the `EffectParameter` reference in a field rather than looking it up by string every frame. String lookups in `effect.Parameters` have a small overhead that adds up over many draw calls:
+
+  ```csharp
+  // In LoadContent:
+  _grayscaleAmountParam = _grayscaleEffect.Parameters["GrayscaleAmount"];
+
+  // In Draw:
+  _grayscaleAmountParam.SetValue(1.0f);
+  ```
+</Tip>
+
+---
+
+## Integrating with the Content Pipeline
+
+Rather than invoking `mgfxc` manually, you can add `.fx` files to your MGCB project and let the content pipeline compile them automatically during `dotnet build`.
+
+<Steps>
+  <Step title="Add the .fx file in MGCB Editor">
+    Open your project in [MGCB Editor](/guides/tools/mgcb-editor) and go to **Edit → Add → Existing Item…**. Select your `.fx` file.
+  </Step>
+  <Step title="Verify the importer and processor">
+    The editor should automatically assign:
+    - **Importer:** `EffectImporter`
+    - **Processor:** `EffectProcessor`
+
+    If not, set them manually in the Properties panel.
+  </Step>
+  <Step title="Build">
+    Press **F6** (or **Build → Build**). The pipeline invokes `mgfxc` internally and writes the compiled `.mgfxo` file to your output directory.
+  </Step>
+  <Step title="Load in your game">
+    ```csharp
+    // Asset stored at Content/Shaders/Grayscale.fx in the MGCB project
+    Effect effect = Content.Load<Effect>("Shaders/Grayscale");
+    ```
+  </Step>
+</Steps>
+
+The equivalent `.mgcb` directives that the editor generates:
+
+```
+/importer:EffectImporter
+/processor:EffectProcessor
+/build:Shaders/Grayscale.fx
+```
+
+---
+
+## macOS / Linux: Wine Requirement
+
+The HLSL-to-GLSL and HLSL-to-DXBC compilation stages of `mgfxc` use the DirectX shader compiler (`d3dcompiler_47.dll`), which is a Windows binary. On macOS and Linux this binary is executed via **Wine**.
+
+### Installing Wine
+
+<Tabs>
+  <Tab title="macOS (Homebrew)">
+    ```bash
+    brew install --cask wine-stable
+    ```
+  </Tab>
+  <Tab title="Ubuntu / Debian">
+    ```bash
+    sudo dpkg --add-architecture i386
+    sudo apt-get update
+    sudo apt-get install wine64 wine32
+    ```
+  </Tab>
+  <Tab title="Fedora / RHEL">
+    ```bash
+    sudo dnf install wine
+    ```
+  </Tab>
+</Tabs>
+
+After installing Wine, run the MonoGame-provided setup script to register the required DLLs:
+
+```bash
+# The script is distributed with the MonoGame SDK / source
+mgfxc_wine_setup.sh
+```
+
+<Note>
+  The `mgfxc_wine_setup.sh` script configures a Wine prefix with the DirectX runtime DLLs that `mgfxc` requires. You only need to run it once per machine. Refer to the [MonoGame macOS setup documentation](https://docs.monogame.net/articles/getting_started/1_setting_up_your_os_for_development_macos.html) for step-by-step instructions.
+</Note>
+
+<Warning>
+  If Wine is not installed or not configured correctly, `mgfxc` will fail with an error when targeting `OpenGL`, `DirectX_11`, or any other profile that uses the HLSL compiler. The error typically manifests as a missing DLL or process launch failure.
+</Warning>
+
+---
+
+## Output File Format
+
+By default, `mgfxc` writes a `.mgfxo` binary file containing the compiled shader bytecode and metadata (parameter names, sampler bindings, technique/pass structure). MonoGame's `ContentManager` knows how to load this format directly.
+
+If you pass an output path ending in `.h`, `mgfxc` writes a C-style header file instead:
+
+```bash
+mgfxc MyShader.fx MyShader.h /Profile:DirectX_11
+```
+
+The generated header looks like:
+
+```c
+// This code was auto generated by the MonoGame Effect Compiler.
+// Do not modify it by hand. Use MGFXC.EXE to regenerate it.
+
+#ifndef MYSHADER_H
+#define MYSHADER_H
+
+static const unsigned char MyShader[] = {
+    0x4d, 0x47, 0x46, 0x58, ...
+};
+
+#endif // MYSHADER_H
+```
+
+This is useful when embedding shader bytecode directly in native C or C++ interop code.

@@ -1,0 +1,400 @@
+---
+title: "Keyboard and Mouse Input Handling in MonoGame"
+sidebarTitle: "Keyboard & Mouse"
+description: "Read keyboard and mouse state in MonoGame using Keyboard.GetState() and Mouse.GetState(). Detect key presses, releases, and mouse position and button state."
+---
+
+MonoGame uses a **polling-based input model** for keyboard and mouse. Each frame you call `Keyboard.GetState()` or `Mouse.GetState()` to get an immutable snapshot of the current input state, then compare it to the previous frame's snapshot to detect transitions like "just pressed" or "just released." This approach keeps your `Update` loop deterministic and avoids missed inputs between frames.
+
+## Keyboard Input
+
+### Reading the Keyboard State
+
+`Keyboard.GetState()` returns a `KeyboardState` struct representing which keys are currently held down. Because it is a value type (struct), you can cheaply store it each frame for comparison.
+
+```csharp
+// At class level
+KeyboardState _previousKeyboardState;
+KeyboardState _currentKeyboardState;
+
+protected override void Update(GameTime gameTime)
+{
+    _previousKeyboardState = _currentKeyboardState;
+    _currentKeyboardState  = Keyboard.GetState();
+
+    base.Update(gameTime);
+}
+```
+
+<Note>
+Always update `_previousKeyboardState` **before** calling `Keyboard.GetState()` again — overwriting it after would lose the old snapshot.
+</Note>
+
+### Checking Key States
+
+`KeyboardState` exposes two primary query methods:
+
+| Method | Returns |
+|---|---|
+| `IsKeyDown(Keys key)` | `true` while the key is held |
+| `IsKeyUp(Keys key)` | `true` while the key is NOT held |
+
+```csharp
+// Held: true every frame the key is down
+if (_currentKeyboardState.IsKeyDown(Keys.Space))
+    _player.Jump();
+
+// Released: true every frame the key is up
+if (_currentKeyboardState.IsKeyUp(Keys.Escape))
+    ResumeGame();
+```
+
+### Detecting a Key Just Pressed or Released This Frame
+
+Compare current and previous states to detect single-frame transitions:
+
+```csharp
+// Just pressed: down now, was up last frame
+bool JustPressed(Keys key) =>
+    _currentKeyboardState.IsKeyDown(key) &&
+    _previousKeyboardState.IsKeyUp(key);
+
+// Just released: up now, was down last frame
+bool JustReleased(Keys key) =>
+    _currentKeyboardState.IsKeyUp(key) &&
+    _previousKeyboardState.IsKeyDown(key);
+```
+
+```csharp
+if (JustPressed(Keys.Enter))
+    _menu.Confirm();
+
+if (JustReleased(Keys.LeftControl))
+    _player.StopCrouching();
+```
+
+### Getting All Currently Pressed Keys
+
+`KeyboardState.GetPressedKeys()` returns a `Keys[]` array of every key that is currently held. Use `GetPressedKeyCount()` first if you want to avoid allocating a new array every frame.
+
+```csharp
+// Allocating version — fine for occasional use
+Keys[] held = _currentKeyboardState.GetPressedKeys();
+foreach (Keys k in held)
+    Console.WriteLine($"{k} is held");
+
+// Non-allocating version — pre-allocate a buffer
+private Keys[] _keyBuffer = new Keys[32];
+
+int count = _currentKeyboardState.GetPressedKeyCount();
+if (count <= _keyBuffer.Length)
+{
+    _currentKeyboardState.GetPressedKeys(_keyBuffer);
+    for (int i = 0; i < count; i++)
+        ProcessKey(_keyBuffer[i]);
+}
+```
+
+### The `Keys` Enum
+
+The `Keys` enum maps to virtual key codes. Common values used in games:
+
+<CardGroup cols={2}>
+  <Card title="Movement">
+    `Keys.W`, `Keys.A`, `Keys.S`, `Keys.D`  
+    `Keys.Up`, `Keys.Down`, `Keys.Left`, `Keys.Right`
+  </Card>
+  <Card title="Actions">
+    `Keys.Space` — jump / confirm  
+    `Keys.Escape` — pause / back  
+    `Keys.Enter` — confirm  
+    `Keys.Tab` — switch target
+  </Card>
+  <Card title="Modifiers">
+    `Keys.LeftShift`, `Keys.RightShift`  
+    `Keys.LeftControl`, `Keys.RightControl`  
+    `Keys.LeftAlt`, `Keys.RightAlt`
+  </Card>
+  <Card title="Function / Misc">
+    `Keys.F1` – `Keys.F12`  
+    `Keys.Back` (Backspace)  
+    `Keys.Delete`, `Keys.Insert`  
+    `Keys.D0`–`Keys.D9` (number row)
+  </Card>
+</CardGroup>
+
+<Tip>
+Digit keys on the number row are `Keys.D0` through `Keys.D9`. Numpad keys are `Keys.NumPad0` through `Keys.NumPad9`.
+</Tip>
+
+### Text Input via `GameWindow.TextInput`
+
+For text entry fields (chat boxes, name inputs) use the `TextInput` event on `GameWindow` rather than polling `GetState()`. This event handles keyboard layout, IME composition, and key repeat automatically.
+
+```csharp
+protected override void Initialize()
+{
+    // Subscribe in Initialize or the constructor
+    Window.TextInput += OnTextInput;
+    base.Initialize();
+}
+
+private void OnTextInput(object sender, TextInputEventArgs e)
+{
+    // e.Character is the typed character (e.g. 'a', 'A', '!')
+    // e.Key is the Keys enum value
+    if (e.Key == Keys.Back && _inputBuffer.Length > 0)
+        _inputBuffer.Remove(_inputBuffer.Length - 1, 1);
+    else if (!char.IsControl(e.Character))
+        _inputBuffer.Append(e.Character);
+}
+```
+
+<Note>
+`TextInput` is not available on all platforms. On mobile platforms use the platform's native on-screen keyboard API.
+</Note>
+
+---
+
+## Mouse Input
+
+### Reading Mouse State
+
+`Mouse.GetState()` returns a `MouseState` struct with cursor position, button states, and scroll wheel values relative to the game window.
+
+```csharp
+MouseState _previousMouseState;
+MouseState _currentMouseState;
+
+protected override void Update(GameTime gameTime)
+{
+    _previousMouseState = _currentMouseState;
+    _currentMouseState  = Mouse.GetState();
+
+    base.Update(gameTime);
+}
+```
+
+### Cursor Position
+
+```csharp
+int x = _currentMouseState.X;   // horizontal pixels from left edge of window
+int y = _currentMouseState.Y;   // vertical pixels from top edge of window
+
+// Or as a Point struct
+Point pos = _currentMouseState.Position;
+```
+
+### Button States
+
+Each button property returns `ButtonState.Pressed` or `ButtonState.Released`:
+
+```csharp
+if (_currentMouseState.LeftButton == ButtonState.Pressed)
+    _player.Shoot();
+
+if (_currentMouseState.RightButton == ButtonState.Pressed)
+    _camera.Zoom();
+
+if (_currentMouseState.MiddleButton == ButtonState.Pressed)
+    _map.Pan();
+```
+
+Detect a click (just pressed this frame):
+
+```csharp
+bool LeftClicked() =>
+    _currentMouseState.LeftButton  == ButtonState.Pressed &&
+    _previousMouseState.LeftButton == ButtonState.Released;
+```
+
+### Scroll Wheel
+
+`ScrollWheelValue` is a **cumulative** integer that increases on scroll-up and decreases on scroll-down, accumulating since the game started. Always compute the delta yourself:
+
+```csharp
+int scrollDelta = _currentMouseState.ScrollWheelValue
+                - _previousMouseState.ScrollWheelValue;
+
+if (scrollDelta > 0) _camera.ZoomIn();
+if (scrollDelta < 0) _camera.ZoomOut();
+```
+
+`MouseState` also exposes `HorizontalScrollWheelValue` for horizontal scroll wheels.
+
+### Setting Cursor Position
+
+Warp the cursor to an absolute window position using `Mouse.SetPosition`:
+
+```csharp
+// Re-center the cursor each frame for mouse-look
+int centerX = GraphicsDevice.Viewport.Width  / 2;
+int centerY = GraphicsDevice.Viewport.Height / 2;
+Mouse.SetPosition(centerX, centerY);
+```
+
+### Cursor Appearance
+
+Set the cursor shape with `Mouse.SetCursor(MouseCursor cursor)` or via `Window.Cursor`:
+
+```csharp
+// Set globally
+Mouse.SetCursor(MouseCursor.Hand);
+
+// Or via the window property
+Window.Cursor = MouseCursor.IBeam;  // text cursor over input fields
+Window.Cursor = MouseCursor.Wait;   // loading
+Window.Cursor = MouseCursor.Arrow;  // default arrow
+```
+
+### Hiding the Cursor
+
+Set `IsMouseVisible = false` on your `Game` class to hide the OS cursor — useful for mouse-look cameras or custom software cursors:
+
+```csharp
+protected override void Initialize()
+{
+    IsMouseVisible = false;
+    base.Initialize();
+}
+```
+
+---
+
+## Full Example: WASD Movement + Mouse-Look
+
+The following example combines keyboard WASD movement with mouse-look in a first-person style. The cursor is hidden and re-centered each frame to produce unlimited mouse delta.
+
+```csharp
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Input;
+
+public class InputDemoGame : Game
+{
+    private GraphicsDeviceManager _graphics;
+
+    // Input state
+    private KeyboardState _prevKeys, _currKeys;
+    private MouseState    _prevMouse, _currMouse;
+
+    // Camera / player
+    private Vector3 _position = Vector3.Zero;
+    private float   _yaw      = 0f;   // horizontal look angle (radians)
+    private float   _pitch    = 0f;   // vertical look angle (radians)
+
+    private const float MoveSpeed      = 5f;    // units per second
+    private const float MouseSensitivity = 0.003f;
+
+    public InputDemoGame()
+    {
+        _graphics = new GraphicsDeviceManager(this);
+        IsMouseVisible = false; // hide OS cursor for mouse-look
+    }
+
+    protected override void Update(GameTime gameTime)
+    {
+        // --- Snapshot input ---
+        _prevKeys   = _currKeys;
+        _currMouse  = Mouse.GetState();    // read before re-centering
+        _currKeys   = Keyboard.GetState();
+
+        // --- Quit ---
+        if (_currKeys.IsKeyDown(Keys.Escape))
+            Exit();
+
+        float dt = (float)gameTime.ElapsedGameTime.TotalSeconds;
+
+        // --- Mouse-look delta ---
+        int cx = GraphicsDevice.Viewport.Width  / 2;
+        int cy = GraphicsDevice.Viewport.Height / 2;
+
+        int dx = _currMouse.X - cx;
+        int dy = _currMouse.Y - cy;
+
+        _yaw   -= dx * MouseSensitivity;
+        _pitch -= dy * MouseSensitivity;
+        _pitch  = MathHelper.Clamp(_pitch,
+                      MathHelper.ToRadians(-89f),
+                      MathHelper.ToRadians( 89f));
+
+        // Re-center cursor for next frame
+        Mouse.SetPosition(cx, cy);
+
+        // --- WASD movement (relative to yaw) ---
+        Vector3 forward = new Vector3(
+            MathF.Sin(_yaw), 0, -MathF.Cos(_yaw));
+        Vector3 right = new Vector3(
+            MathF.Cos(_yaw), 0,  MathF.Sin(_yaw));
+
+        if (_currKeys.IsKeyDown(Keys.W)) _position += forward * MoveSpeed * dt;
+        if (_currKeys.IsKeyDown(Keys.S)) _position -= forward * MoveSpeed * dt;
+        if (_currKeys.IsKeyDown(Keys.A)) _position -= right   * MoveSpeed * dt;
+        if (_currKeys.IsKeyDown(Keys.D)) _position += right   * MoveSpeed * dt;
+
+        // Vertical movement
+        if (_currKeys.IsKeyDown(Keys.Space))       _position.Y += MoveSpeed * dt;
+        if (_currKeys.IsKeyDown(Keys.LeftControl)) _position.Y -= MoveSpeed * dt;
+
+        // --- Just-pressed example: toggle fullscreen ---
+        bool f11JustPressed =
+            _currKeys.IsKeyDown(Keys.F11) &&
+            _prevKeys.IsKeyUp(Keys.F11);
+
+        if (f11JustPressed)
+            _graphics.ToggleFullScreen();
+
+        // --- Left-click: fire ---
+        bool leftClicked =
+            _currMouse.LeftButton  == ButtonState.Pressed &&
+            _prevMouse.LeftButton  == ButtonState.Released;
+
+        if (leftClicked)
+            SpawnProjectile(_position, forward);
+
+        // --- Scroll wheel: change weapon ---
+        int scrollDelta = _currMouse.ScrollWheelValue
+                        - _prevMouse.ScrollWheelValue;
+        if (scrollDelta != 0)
+            CycleWeapon(scrollDelta > 0 ? 1 : -1);
+
+        _prevMouse = _currMouse;
+        base.Update(gameTime);
+    }
+
+    private void SpawnProjectile(Vector3 origin, Vector3 direction) { /* ... */ }
+    private void CycleWeapon(int direction) { /* ... */ }
+
+    protected override void Draw(GameTime gameTime)
+    {
+        GraphicsDevice.Clear(Color.CornflowerBlue);
+        // Render scene using _position, _yaw, _pitch ...
+        base.Draw(gameTime);
+    }
+}
+```
+
+<Warning>
+When using mouse-look with `Mouse.SetPosition`, always read `Mouse.GetState()` **before** calling `SetPosition`. Reading it after the warp returns a position near the center, producing zero delta.
+</Warning>
+
+---
+
+## Quick Reference
+
+<CardGroup cols={2}>
+  <Card title="Keyboard API">
+    `Keyboard.GetState()` → `KeyboardState`  
+    `.IsKeyDown(Keys k)` — held  
+    `.IsKeyUp(Keys k)` — not held  
+    `.GetPressedKeys()` — all held keys  
+    `.GetPressedKeyCount()` — count without alloc
+  </Card>
+  <Card title="Mouse API">
+    `Mouse.GetState()` → `MouseState`  
+    `.X` / `.Y` / `.Position` — cursor coords  
+    `.LeftButton` / `.RightButton` / `.MiddleButton`  
+    `.ScrollWheelValue` — cumulative, diff for delta  
+    `Mouse.SetPosition(x, y)` — warp cursor  
+    `Mouse.SetCursor(MouseCursor)` — shape
+  </Card>
+</CardGroup>

@@ -1,0 +1,186 @@
+---
+title: "Install MonoGame and Configure Your Development Environment"
+sidebarTitle: "Installation"
+description: "Install MonoGame via NuGet or dotnet CLI, set up the required .NET SDK, and install platform-specific workloads for mobile development."
+---
+
+Setting up a MonoGame development environment is straightforward on any supported operating system. The core toolchain is the .NET SDK plus the MonoGame project templates, which you install once and reuse across every project. Platform-specific extras — such as the DirectX runtime on Windows or the MAUI workload for mobile — only need to be installed when you are targeting those platforms. This page walks through every step in order.
+
+## Prerequisites
+
+Before installing MonoGame, make sure the following are in place:
+
+| Tool | Minimum Version | Notes |
+|---|---|---|
+| .NET SDK | 8.0 | .NET 9+ recommended |
+| IDE / Editor | — | Visual Studio 2022 (17.8+), VS Code, or JetBrains Rider |
+
+<Tabs>
+  <Tab title="Windows">
+    Install the .NET SDK from [dotnet.microsoft.com](https://dotnet.microsoft.com/download/dotnet), **or** open the Visual Studio 2022 installer and select the **.NET desktop development** workload — this bundles .NET 8 automatically.
+
+    If you plan to target **WindowsDX**, also install the [DirectX June 2010 runtime](https://www.microsoft.com/en-us/download/details.aspx?id=8109). This is required for audio and gamepad support to function correctly on the DirectX back-end.
+  </Tab>
+  <Tab title="macOS">
+    Install the .NET SDK from [dotnet.microsoft.com](https://dotnet.microsoft.com/download/dotnet). Visual Studio for Mac is **not** supported; use VS Code or JetBrains Rider on macOS.
+
+    macOS 13 "Ventura" or newer is required for desktop OpenGL targets.
+
+    If you intend to compile custom HLSL shaders with `mgfxc`, Wine must also be installed. See [Wine setup for shader compilation](#wine-setup-for-shader-compilation) below.
+  </Tab>
+  <Tab title="Linux">
+    Install the .NET SDK from [dotnet.microsoft.com](https://dotnet.microsoft.com/download/dotnet) or via your distribution's package manager. Your distribution must provide **glibc 2.27** or newer (Ubuntu 22.04+, Debian 12+, SteamOS 3.0+, etc.).
+
+    VS Code and JetBrains Rider are both supported on Linux. Mobile targets (Android and iOS) **cannot** be built from Linux.
+
+    If you intend to compile custom HLSL shaders with `mgfxc`, Wine must also be installed. See [Wine setup for shader compilation](#wine-setup-for-shader-compilation) below.
+  </Tab>
+</Tabs>
+
+## Installing MonoGame
+
+<Steps>
+  <Step title="Install the MonoGame project templates">
+    Run the following command in any terminal to pull the official MonoGame templates from NuGet:
+
+    ```bash
+    dotnet new install MonoGame.Templates
+    ```
+
+    This registers all MonoGame project templates with the `dotnet new` command. You only need to do this once per machine (or once per SDK major version).
+  </Step>
+
+  <Step title="Create a new game project">
+    Pick the template that matches your target platform. The most common starting point for new projects is the **DesktopGL** template, which runs on Windows, Linux, and macOS.
+
+    <CodeGroup>
+      ```bash DesktopGL (Windows / Linux / macOS)
+      dotnet new mgdesktopgl -o MyGame
+      ```
+
+      ```bash Windows DirectX
+      dotnet new mgwindowsdx -o MyGame
+      ```
+
+      ```bash Android
+      dotnet new mgandroid -o MyGame
+      ```
+
+      ```bash iOS
+      dotnet new mgios -o MyGame
+      ```
+    </CodeGroup>
+
+    Each command creates a new folder (e.g. `MyGame/`) containing a ready-to-run game project pre-configured for the chosen platform.
+  </Step>
+
+  <Step title="Restore dependencies and run">
+    Navigate into the project folder and run the game to confirm everything is working:
+
+    ```bash
+    cd MyGame
+    dotnet run
+    ```
+
+    A cornflower-blue window should appear — MonoGame's traditional "hello world". If you see it, your environment is set up correctly.
+  </Step>
+</Steps>
+
+## Mobile Workloads
+
+Targeting Android or iOS requires the MAUI workload, which bundles the compilers, linkers, and debugging bridges needed for mobile deployment.
+
+<Tabs>
+  <Tab title="VS Code / Rider / CLI">
+    ```bash
+    dotnet workload install maui ios android
+    ```
+
+    You can omit `ios` or `android` if you are only targeting one mobile platform. MAUI itself must always be included because it provides debugging tools that both platforms depend on.
+  </Tab>
+  <Tab title="Visual Studio 2022">
+    Open the **Visual Studio Installer**, click **Modify** on your VS 2022 installation, and select the **.NET Multi-platform App UI Development** workload. This installs both iOS and Android support together.
+  </Tab>
+</Tabs>
+
+<Note>
+  Mobile development is **not** possible from Linux. If you are on Linux and want to target Android or iOS, you will need a Windows or macOS machine for those builds.
+</Note>
+
+## Wine Setup for Shader Compilation
+
+The MonoGame Effect compiler (`mgfxc`) is a Windows-native tool. On macOS and Linux, it runs under [Wine](https://www.winehq.org/). Without Wine, any project that builds custom HLSL shaders (`.fx` files) through the content pipeline will fail to compile those shaders.
+
+<Tabs>
+  <Tab title="macOS">
+    ```bash
+    # Install Wine via Homebrew
+    brew install --cask wine-stable
+    ```
+
+    After installing Wine, verify the shader compiler works:
+
+    ```bash
+    mgfxc --help
+    ```
+  </Tab>
+  <Tab title="Linux">
+    Install Wine from your distribution's package manager. On Debian/Ubuntu-based systems:
+
+    ```bash
+    sudo apt install wine
+    ```
+
+    On Fedora/RHEL-based systems:
+
+    ```bash
+    sudo dnf install wine
+    ```
+
+    Refer to the [WineHQ installation guide](https://www.winehq.org/) for other distributions or for the latest stable Wine release.
+  </Tab>
+</Tabs>
+
+<Note>
+  If you are not writing custom HLSL shaders and only use the built-in MonoGame content types (textures, fonts, audio, models), you do not need Wine.
+</Note>
+
+## Building from Source
+
+If you want to contribute to MonoGame or use unreleased changes, you can build the framework itself from source.
+
+<Steps>
+  <Step title="Clone the repository with submodules">
+    ```bash
+    git clone --recurse-submodules https://github.com/MonoGame/MonoGame.git
+    ```
+
+    If you already cloned without `--recurse-submodules`, initialize them afterwards:
+
+    ```bash
+    git submodule update --init
+    ```
+  </Step>
+
+  <Step title="Install Premake5">
+    MonoGame's native build system requires [Premake5](https://premake.github.io/download/). Download the **latest** Premake 5 beta (5.0.0-beta7 or newer — earlier versions will not work) and add the executable to your system `PATH`.
+  </Step>
+
+  <Step title="Open the solution for your target platform">
+    Open the solution file corresponding to your target in Visual Studio, VS Code, or Rider, or use the .NET CLI to build from the command line. Refer to the README in the repository root for platform-specific build instructions.
+  </Step>
+</Steps>
+
+## Verifying Your Installation
+
+After completing the setup, confirm the MonoGame tools are on your path:
+
+```bash
+# Check the installed templates
+dotnet new list --tag monogame
+
+# Verify the content builder tool (installed with templates)
+dotnet tool list --global
+```
+
+You should see `dotnet-mgcb`, `dotnet-mgcb-editor`, and `dotnet-mgfxc` listed among your global .NET tools.

@@ -1,0 +1,332 @@
+---
+title: "Working with Texture2D in MonoGame"
+sidebarTitle: "Textures"
+description: "Load, create, and manipulate Texture2D assets in MonoGame. Covers content pipeline loading, programmatic creation, pixel data access, and render targets."
+---
+
+`Texture2D` is MonoGame's representation of a 2D image stored on the GPU. It is the fundamental asset type for all sprite rendering — every call to `SpriteBatch.Draw` takes a `Texture2D`. Understanding how to load, create, read, and write texture data gives you full control over your game's visual assets, from loading a PNG at startup to procedurally generating terrain maps at runtime.
+
+## Core Properties
+
+Every `Texture2D` exposes the following properties, all inherited from the `Texture` base class or defined directly on `Texture2D`:
+
+| Property | Type | Description |
+|---|---|---|
+| `Width` | `int` | Width of the texture in pixels. |
+| `Height` | `int` | Height of the texture in pixels. |
+| `Bounds` | `Rectangle` | A `Rectangle(0, 0, Width, Height)` shorthand. |
+| `Format` | `SurfaceFormat` | The pixel format of the texture data (e.g. `Color`, `Dxt5`). |
+| `LevelCount` | `int` | Number of mipmap levels. `1` means no mipmaps. |
+
+```csharp
+Texture2D tex = Content.Load<Texture2D>("Textures/player");
+
+int w = tex.Width;          // e.g. 64
+int h = tex.Height;         // e.g. 64
+SurfaceFormat fmt = tex.Format; // SurfaceFormat.Color
+int mips = tex.LevelCount;  // 1 (no mipmaps from content pipeline unless specified)
+Rectangle bounds = tex.Bounds; // Rectangle(0, 0, 64, 64)
+```
+
+---
+
+## Loading Textures
+
+<Steps>
+
+### Via the Content Pipeline (Recommended)
+
+The MonoGame Content Pipeline pre-processes textures into an optimised `.xnb` binary format at build time. Loading via `ContentManager` is the fastest and most cross-platform way to get textures into your game.
+
+```csharp
+protected override void LoadContent()
+{
+    // Loads Content/Textures/player.xnb (built from player.png)
+    Texture2D playerTexture = Content.Load<Texture2D>("Textures/player");
+}
+```
+
+The path passed to `Load<T>` is relative to your project's `Content` root and **must not** include a file extension.
+
+<Note>
+`ContentManager` caches loaded assets. Calling `Content.Load<Texture2D>("Textures/player")` twice returns the same `Texture2D` instance. Call `Content.Unload()` to release all cached assets, or `ContentManager.UnloadAsset(assetName)` for a specific one.
+</Note>
+
+### From a File Path at Runtime
+
+`Texture2D.FromFile` opens an image from the file system at runtime without going through the content pipeline. Supported formats include BMP, GIF, JPG, PNG, TIF, and DDS (simple textures only).
+
+```csharp
+// Load a PNG from the file system
+Texture2D runtimeTexture = Texture2D.FromFile(GraphicsDevice, "Content/Textures/bonus.png");
+```
+
+<Warning>
+`Texture2D.FromFile` is implemented via `FromStream` internally and does **not** premultiply alpha automatically. Transparent pixels may appear with dark fringes when blended unless you process the alpha yourself. Use the content pipeline (`ContentManager.Load`) for production assets.
+</Warning>
+
+### From a Stream
+
+`Texture2D.FromStream` creates a texture from any readable `Stream`. This is the right choice when loading images downloaded at runtime, embedded as resources, or stored inside zip archives.
+
+```csharp
+using (var stream = File.OpenRead("saves/screenshot.png"))
+{
+    Texture2D screenshot = Texture2D.FromStream(GraphicsDevice, stream);
+}
+```
+
+Like `FromFile`, `FromStream` does not premultiply alpha by default. A `colorProcessor` overload is available if you need to transform the raw RGBA bytes before they are uploaded to the GPU:
+
+```csharp
+Texture2D tex = Texture2D.FromStream(GraphicsDevice, stream,
+    colorProcessor: bytes =>
+    {
+        // Premultiply alpha manually
+        for (int i = 0; i < bytes.Length; i += 4)
+        {
+            float a = bytes[i + 3] / 255f;
+            bytes[i]     = (byte)(bytes[i]     * a);
+            bytes[i + 1] = (byte)(bytes[i + 1] * a);
+            bytes[i + 2] = (byte)(bytes[i + 2] * a);
+        }
+    });
+```
+
+</Steps>
+
+---
+
+## Creating Textures Programmatically
+
+You can create a `Texture2D` entirely in code, which is useful for procedural generation, debug visualisations, and dynamic atlases.
+
+### Constructor
+
+```csharp
+// Simple: 32-bit RGBA colour, no mipmaps
+Texture2D texture = new Texture2D(GraphicsDevice, width, height);
+
+// With explicit format and mipmap generation
+Texture2D mipmapped = new Texture2D(GraphicsDevice, 256, 256,
+    mipmap: true, format: SurfaceFormat.Color);
+```
+
+After construction the texture is uninitialized — its pixel data is undefined. You must call `SetData` to upload valid pixel values.
+
+### SetData — Uploading Pixel Colours
+
+```csharp
+public void SetData<T>(T[] data) where T : struct;
+```
+
+The simplest overload uploads an array of `T` that covers the entire texture. When `T` is `Color`, each element maps directly to one pixel in row-major order (left-to-right, top-to-bottom).
+
+```csharp
+// Create a 64×64 solid red texture
+int width = 64, height = 64;
+var texture = new Texture2D(GraphicsDevice, width, height);
+
+Color[] pixels = new Color[width * height];
+Array.Fill(pixels, Color.Red);
+
+texture.SetData(pixels);
+```
+
+#### Checkerboard Pattern
+
+```csharp
+int size = 64;
+var texture = new Texture2D(GraphicsDevice, size, size);
+var pixels = new Color[size * size];
+
+for (int y = 0; y < size; y++)
+for (int x = 0; x < size; x++)
+{
+    bool even = ((x / 8) + (y / 8)) % 2 == 0;
+    pixels[y * size + x] = even ? Color.White : Color.Black;
+}
+
+texture.SetData(pixels);
+```
+
+### SetData with a Sub-Rectangle
+
+The full overload lets you update just a region of the texture and select a mipmap level:
+
+```csharp
+public void SetData<T>(int level, Rectangle? rect, T[] data,
+    int startIndex, int elementCount) where T : struct;
+```
+
+```csharp
+// Update a 16×16 patch at (32, 32) on mip level 0
+var patch = new Color[16 * 16];
+Array.Fill(patch, Color.Yellow);
+
+texture.SetData(
+    level: 0,
+    rect: new Rectangle(32, 32, 16, 16),
+    data: patch,
+    startIndex: 0,
+    elementCount: patch.Length);
+```
+
+---
+
+## Reading Pixel Data
+
+`GetData` copies texel data from the GPU back to a CPU-side array. This is relatively slow (GPU readback stall) — avoid calling it every frame.
+
+```csharp
+public void GetData<T>(T[] data) where T : struct;
+```
+
+```csharp
+// Read all pixels from a texture
+var pixels = new Color[texture.Width * texture.Height];
+texture.GetData(pixels);
+
+// Sample the pixel at (10, 20)
+Color sample = pixels[20 * texture.Width + 10];
+Console.WriteLine($"R:{sample.R} G:{sample.G} B:{sample.B} A:{sample.A}");
+```
+
+The full overload mirrors `SetData` with a mip level, array slice, rectangle, start index, and element count:
+
+```csharp
+public void GetData<T>(int level, int arraySlice, Rectangle? rect,
+    T[] data, int startIndex, int elementCount) where T : struct;
+```
+
+<Warning>
+Reading pixels back from the GPU (`GetData`) is a **synchronous stall** — the CPU waits for the GPU to finish. Never call `GetData` per frame in performance-sensitive code. If you need per-frame pixel inspection, consider rendering to a `RenderTarget2D` and reading from that instead.
+</Warning>
+
+---
+
+## Saving Textures to Disk
+
+`Texture2D` provides two built-in save methods for exporting textures to image files.
+
+```csharp
+// Save as PNG (lossless)
+using (var stream = File.Create("screenshot.png"))
+{
+    texture.SaveAsPng(stream, texture.Width, texture.Height);
+}
+
+// Save as JPEG (lossy)
+using (var stream = File.Create("thumbnail.jpg"))
+{
+    texture.SaveAsJpeg(stream, texture.Width, texture.Height);
+}
+```
+
+You can pass different `width` and `height` values to resize the output image at save time.
+
+---
+
+## SurfaceFormat
+
+`SurfaceFormat` describes how individual pixels are stored in memory. The format affects memory usage, GPU performance, and rendering quality.
+
+<CardGroup cols={2}>
+  <Card title="SurfaceFormat.Color" icon="palette">
+    32-bit RGBA (8 bits per channel). The default format for most textures. Compatible with `Color[]` in `SetData`/`GetData`.
+  </Card>
+  <Card title="SurfaceFormat.Dxt1" icon="compress">
+    Block-compressed format. ~4:1 compression ratio, no alpha (or 1-bit alpha). Excellent for opaque backgrounds and terrain.
+  </Card>
+  <Card title="SurfaceFormat.Dxt3" icon="compress">
+    Block-compressed with explicit 4-bit alpha. Good for textures with sharp alpha transitions (e.g. fonts, foliage).
+  </Card>
+  <Card title="SurfaceFormat.Dxt5" icon="compress">
+    Block-compressed with interpolated alpha. Best for smooth transparency gradients. Same ratio as Dxt3 but higher alpha quality.
+  </Card>
+</CardGroup>
+
+<Note>
+DXT (BC) compressed formats are natively supported on all desktop GPU platforms. Mobile platforms may require ETC or PVRTC formats instead. The MonoGame Content Pipeline selects an appropriate format automatically based on your target platform when you enable texture compression in the pipeline settings.
+</Note>
+
+---
+
+## Disposing Textures
+
+`Texture2D` implements `IDisposable`. How and when you dispose of a texture depends on how it was created:
+
+| Source | Who Disposes? |
+|---|---|
+| `Content.Load<Texture2D>` | `ContentManager.Unload()` — **do not** call `Dispose()` manually. |
+| `new Texture2D(...)` | **You** must call `texture.Dispose()` when done. |
+| `Texture2D.FromFile` | **You** must call `texture.Dispose()` when done. |
+| `Texture2D.FromStream` | **You** must call `texture.Dispose()` when done. |
+
+```csharp
+// Manually created texture — must be disposed
+private Texture2D _dynamicTexture;
+
+protected override void LoadContent()
+{
+    _dynamicTexture = new Texture2D(GraphicsDevice, 64, 64);
+}
+
+protected override void UnloadContent()
+{
+    _dynamicTexture?.Dispose();
+    _dynamicTexture = null;
+}
+```
+
+<Warning>
+Drawing with a `Dispose()`d texture will throw an `ObjectDisposedException`. Always guard against double-dispose and null references when managing texture lifetimes manually.
+</Warning>
+
+---
+
+## Full Example: Procedural Noise Texture
+
+This example shows the complete workflow for creating, populating, drawing, and saving a procedurally generated texture.
+
+```csharp
+private Texture2D _noiseTexture;
+private SpriteBatch _spriteBatch;
+
+protected override void LoadContent()
+{
+    _spriteBatch = new SpriteBatch(GraphicsDevice);
+
+    int width = 256, height = 256;
+    _noiseTexture = new Texture2D(GraphicsDevice, width, height);
+
+    var pixels = new Color[width * height];
+    var rng = new Random(42);
+
+    for (int i = 0; i < pixels.Length; i++)
+    {
+        byte v = (byte)rng.Next(256);
+        pixels[i] = new Color(v, v, v, 255);
+    }
+
+    _noiseTexture.SetData(pixels);
+
+    // Optionally save to disk
+    using var stream = File.Create("noise.png");
+    _noiseTexture.SaveAsPng(stream, width, height);
+}
+
+protected override void Draw(GameTime gameTime)
+{
+    GraphicsDevice.Clear(Color.Black);
+
+    _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
+    _spriteBatch.Draw(_noiseTexture, Vector2.Zero, Color.White);
+    _spriteBatch.End();
+}
+
+protected override void UnloadContent()
+{
+    _noiseTexture?.Dispose();
+}
+```

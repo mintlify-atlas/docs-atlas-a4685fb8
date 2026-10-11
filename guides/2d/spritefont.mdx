@@ -1,0 +1,377 @@
+---
+title: "Rendering Text with SpriteFont in MonoGame"
+sidebarTitle: "SpriteFont"
+description: "SpriteFont renders bitmap text in MonoGame. Learn how to create .spritefont descriptor files, load fonts through the content pipeline, and draw text with SpriteBatch."
+---
+
+`SpriteFont` is MonoGame's bitmap-font system. At build time the Content Pipeline reads a TrueType or OpenType font installed on your machine, rasterises every requested character into a texture atlas, and saves the result as a `.xnb` asset. At runtime you load that atlas with `Content.Load<SpriteFont>` and pass it to `SpriteBatch.DrawString` — there is no text-shaping happening on the GPU. This keeps text rendering simple, predictable, and extremely fast.
+
+## How SpriteFont Works
+
+<Steps>
+
+### At Build Time
+
+The Content Pipeline reads a `.spritefont` XML descriptor that names a font, selects a size and style, and declares which Unicode code points to include. It renders each glyph into a packed texture atlas and records each glyph's bounding rectangle, cropping offsets, and kerning metrics in the `.xnb` file.
+
+### At Runtime
+
+`Content.Load<SpriteFont>` deserialises the `.xnb` into a `SpriteFont` object. That object holds:
+- The glyph atlas as an internal `Texture2D` (accessible via `SpriteFont.Texture`).
+- A `Glyph[]` array with per-character bounds, cropping, and kerning data.
+- `LineSpacing`, `Spacing`, and `DefaultCharacter` metadata.
+
+### Drawing
+
+`SpriteBatch.DrawString` iterates the characters in your string, looks up each glyph in the atlas, and adds the corresponding quad to the sprite batch — exactly as if you had drawn tiny textured rectangles yourself.
+
+</Steps>
+
+---
+
+## Creating a .spritefont Descriptor
+
+Add a new `.spritefont` XML file to your `Content` project (in the MGCB Editor, right-click → Add → New Item → SpriteFont Description). Below is a complete, annotated example:
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<XnaContent xmlns:Graphics="Microsoft.Xna.Framework.Content.Pipeline.Graphics">
+  <Asset Type="Graphics:FontDescription">
+
+    <!-- The name of the font as installed on your OS.
+         Must be available on the build machine. -->
+    <FontName>Arial</FontName>
+
+    <!-- Point size of the rendered glyphs. -->
+    <Size>16</Size>
+
+    <!-- Extra horizontal spacing (in pixels) added between characters.
+         Negative values are allowed to tighten tracking. -->
+    <Spacing>0</Spacing>
+
+    <!-- Whether to use kerning pairs from the font file.
+         Recommended: true. -->
+    <UseKerning>true</UseKerning>
+
+    <!-- Font style: Regular, Bold, Italic, or Bold, Italic -->
+    <Style>Regular</Style>
+
+    <!-- Optional: character to substitute when a requested glyph is absent.
+         Omit this element to throw an exception on missing characters. -->
+    <DefaultCharacter>*</DefaultCharacter>
+
+    <!-- The Unicode ranges to rasterise.
+         Start/End are XML character references (decimal or hex).
+         &#32; = Space (0x20), &#126; = Tilde (0x7E) covers basic ASCII. -->
+    <CharacterRegions>
+      <CharacterRegion>
+        <Start>&#32;</Start>   <!-- Space -->
+        <End>&#126;</End>      <!-- ~ (tilde) -->
+      </CharacterRegion>
+    </CharacterRegions>
+
+  </Asset>
+</XnaContent>
+```
+
+<Tip>
+Keep `CharacterRegions` as small as possible. Each additional code point increases atlas size and build time. For most English-language games, the range `&#32;`–`&#126;` (printable ASCII) is sufficient. Add additional regions for extended Latin, Cyrillic, CJK, etc. only when needed.
+</Tip>
+
+### Multiple Regions
+
+You can declare multiple `<CharacterRegion>` elements to pick and choose character subsets:
+
+```xml
+<CharacterRegions>
+  <!-- Printable ASCII -->
+  <CharacterRegion>
+    <Start>&#32;</Start>
+    <End>&#126;</End>
+  </CharacterRegion>
+  <!-- Latin Extended-A (accented characters: À–ŷ) -->
+  <CharacterRegion>
+    <Start>&#192;</Start>
+    <End>&#382;</End>
+  </CharacterRegion>
+</CharacterRegions>
+```
+
+---
+
+## Loading a SpriteFont
+
+```csharp
+private SpriteFont _font;
+
+protected override void LoadContent()
+{
+    // Loads Content/Fonts/arial.xnb
+    _font = Content.Load<SpriteFont>("Fonts/arial");
+}
+```
+
+Like all `ContentManager`-loaded assets, the `SpriteFont` is cached and must **not** be manually disposed. It is automatically freed when you call `Content.Unload()`.
+
+---
+
+## Drawing Text
+
+### Basic: String at Position with Colour
+
+```csharp
+public void DrawString(SpriteFont spriteFont, string text, Vector2 position, Color color);
+```
+
+```csharp
+_spriteBatch.Begin();
+_spriteBatch.DrawString(_font, "Hello, World!", new Vector2(10, 10), Color.White);
+_spriteBatch.End();
+```
+
+`position` is the top-left corner of the text block (before any origin adjustment).
+
+### Full Overload: Rotation, Origin, Scale, Effects, Depth
+
+```csharp
+public void DrawString(
+    SpriteFont spriteFont,
+    string text,
+    Vector2 position,
+    Color color,
+    float rotation,
+    Vector2 origin,
+    float scale,
+    SpriteEffects effects,
+    float layerDepth
+);
+```
+
+| Parameter | Description |
+|---|---|
+| `rotation` | Clockwise rotation in **radians** applied around `origin`. |
+| `origin` | Pivot point in text-space. `Vector2.Zero` = top-left of the text block. |
+| `scale` | Uniform scale multiplier. A `Vector2 scale` variant is also available. |
+| `effects` | `SpriteEffects.FlipHorizontally` / `FlipVertically` or both combined. |
+| `layerDepth` | Depth value used when `SpriteSortMode` is `BackToFront` or `FrontToBack`. |
+
+```csharp
+// Draw a label at 45° rotation around its centre
+string label = "LEVEL UP!";
+Vector2 size   = _font.MeasureString(label);
+Vector2 origin = size / 2f;
+
+_spriteBatch.Begin();
+_spriteBatch.DrawString(
+    _font, label,
+    position: new Vector2(400, 300),
+    color: Color.Gold,
+    rotation: MathHelper.ToRadians(45f),
+    origin: origin,
+    scale: 1.5f,
+    effects: SpriteEffects.None,
+    layerDepth: 0f);
+_spriteBatch.End();
+```
+
+---
+
+## SpriteFont Properties
+
+### LineSpacing
+
+```csharp
+public int LineSpacing { get; set; }
+```
+
+The vertical distance in pixels from one baseline to the next. `DrawString` advances the Y position by `LineSpacing` each time it encounters a `\n` character. You can read or modify this at runtime.
+
+```csharp
+int leading = _font.LineSpacing; // e.g. 20
+```
+
+### Spacing
+
+```csharp
+public float Spacing { get; set; }
+```
+
+Extra horizontal space in pixels inserted between every pair of consecutive characters (on top of the font's own kerning). Positive values spread characters apart; negative values tighten them. Defaults to the value specified in the `.spritefont` descriptor.
+
+```csharp
+_font.Spacing = 2f; // add 2 pixels of tracking
+```
+
+### DefaultCharacter
+
+```csharp
+public char? DefaultCharacter { get; set; }
+```
+
+When `DrawString` encounters a character that was not included in any `<CharacterRegion>`, it substitutes `DefaultCharacter` instead of throwing. If `DefaultCharacter` is `null` and an unmapped character is encountered, an `ArgumentException` is thrown.
+
+```csharp
+// Silently substitute '?' for any unmapped glyph
+_font.DefaultCharacter = '?';
+```
+
+<Note>
+You can also set `DefaultCharacter` in the `.spritefont` XML file via the `<DefaultCharacter>` element, which avoids the need to set it at runtime.
+</Note>
+
+### Texture
+
+```csharp
+public Texture2D Texture { get; }
+```
+
+The internal glyph atlas texture. Exposed for cases where you want to implement custom text rendering or inspect the atlas.
+
+---
+
+## Measuring Text
+
+```csharp
+public Vector2 MeasureString(string text);
+public Vector2 MeasureString(StringBuilder text);
+```
+
+Returns the width and height (in pixels) of the text block as it would be rendered with this font. Multi-line strings (containing `\n`) are fully supported.
+
+```csharp
+Vector2 size = _font.MeasureString("Hello, World!");
+// size.X = pixel width of the string
+// size.Y = pixel height (approximately LineSpacing for single-line text)
+```
+
+### Centering Text on Screen
+
+Subtract half the measured size from the screen centre to position text in the middle of the viewport:
+
+```csharp
+string message = "GAME OVER";
+Vector2 textSize  = _font.MeasureString(message);
+Vector2 screenCentre = new Vector2(
+    GraphicsDevice.Viewport.Width  / 2f,
+    GraphicsDevice.Viewport.Height / 2f);
+
+// Top-left position that centres the text block
+Vector2 textPosition = screenCentre - textSize / 2f;
+
+_spriteBatch.Begin();
+_spriteBatch.DrawString(_font, message, textPosition, Color.Red);
+_spriteBatch.End();
+```
+
+Alternatively use the `origin` parameter to let `SpriteBatch` do the offset:
+
+```csharp
+Vector2 origin = _font.MeasureString(message) / 2f;
+
+_spriteBatch.DrawString(
+    _font, message,
+    position: screenCentre,
+    color: Color.Red,
+    rotation: 0f,
+    origin: origin,       // pivot at text centre
+    scale: 1f,
+    effects: SpriteEffects.None,
+    layerDepth: 0f);
+```
+
+---
+
+## Performance: StringBuilder Overload
+
+Every call to `string.Format` or string interpolation (`$"..."`) allocates a new string object on the managed heap, creating garbage-collection pressure. For labels that change every frame — counters, timers, coordinates — use `StringBuilder` instead.
+
+```csharp
+public void DrawString(SpriteFont spriteFont, StringBuilder text, Vector2 position, Color color);
+// Full overload also available:
+public void DrawString(SpriteFont spriteFont, StringBuilder text, Vector2 position, Color color,
+    float rotation, Vector2 origin, float scale, SpriteEffects effects, float layerDepth);
+```
+
+### Score Counter Example
+
+```csharp
+private int _score = 0;
+private StringBuilder _scoreBuilder = new StringBuilder(32);
+
+protected override void Update(GameTime gameTime)
+{
+    // ... game logic that changes _score ...
+}
+
+protected override void Draw(GameTime gameTime)
+{
+    GraphicsDevice.Clear(Color.Black);
+
+    // Reuse the StringBuilder — no heap allocation
+    _scoreBuilder.Clear();
+    _scoreBuilder.Append("Score: ");
+    _scoreBuilder.Append(_score);
+
+    _spriteBatch.Begin();
+    _spriteBatch.DrawString(_font, _scoreBuilder, new Vector2(10, 10), Color.White);
+    _spriteBatch.End();
+}
+```
+
+<Tip>
+Pre-allocate `StringBuilder` with a sensible initial capacity (e.g. `new StringBuilder(64)`) to avoid internal buffer re-allocations as the string grows.
+</Tip>
+
+---
+
+## Complete Example: Title Screen
+
+This example puts everything together: loading a font, measuring text, centering it, and drawing multiple lines with different colours.
+
+```csharp
+private SpriteFont _titleFont;
+private SpriteFont _uiFont;
+private SpriteBatch _spriteBatch;
+
+protected override void LoadContent()
+{
+    _spriteBatch = new SpriteBatch(GraphicsDevice);
+    _titleFont   = Content.Load<SpriteFont>("Fonts/title");  // large bold font
+    _uiFont      = Content.Load<SpriteFont>("Fonts/ui");     // small regular font
+}
+
+protected override void Draw(GameTime gameTime)
+{
+    GraphicsDevice.Clear(Color.Black);
+
+    int w = GraphicsDevice.Viewport.Width;
+    int h = GraphicsDevice.Viewport.Height;
+
+    _spriteBatch.Begin();
+
+    // Centred title
+    const string title = "MY AWESOME GAME";
+    Vector2 titleSize = _titleFont.MeasureString(title);
+    Vector2 titlePos  = new Vector2((w - titleSize.X) / 2f, h * 0.25f);
+    _spriteBatch.DrawString(_titleFont, title, titlePos, Color.Gold);
+
+    // Subtitle line, centred below the title
+    const string sub = "A MonoGame Adventure";
+    Vector2 subSize = _uiFont.MeasureString(sub);
+    Vector2 subPos  = new Vector2((w - subSize.X) / 2f,
+                                  titlePos.Y + titleSize.Y + 12f);
+    _spriteBatch.DrawString(_uiFont, sub, subPos, Color.LightGray);
+
+    // Blinking "Press Start" prompt near the bottom
+    bool blink = (int)(gameTime.TotalGameTime.TotalSeconds * 2) % 2 == 0;
+    if (blink)
+    {
+        const string prompt = "Press Enter to Start";
+        Vector2 promptSize = _uiFont.MeasureString(prompt);
+        Vector2 promptPos  = new Vector2((w - promptSize.X) / 2f, h * 0.75f);
+        _spriteBatch.DrawString(_uiFont, prompt, promptPos, Color.White);
+    }
+
+    _spriteBatch.End();
+}
+```

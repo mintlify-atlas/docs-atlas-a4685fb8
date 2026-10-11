@@ -1,0 +1,294 @@
+---
+title: "Game Components: Modular, Reusable Subsystems in MonoGame"
+sidebarTitle: "Game Components"
+description: "GameComponent and DrawableGameComponent let you split game logic into modular, independently updatable and drawable subsystems that integrate with the game loop."
+---
+
+As a game grows, stuffing all logic directly into `Game1` becomes unmanageable. MonoGame's component system gives you a structured way to split concerns: each subsystem becomes a self-contained class that hooks into the main game loop automatically. Once you call `Components.Add(myComponent)`, MonoGame handles calling `Initialize`, `Update`, and `Draw` at the right times — you never wire up the calls manually.
+
+---
+
+## Interfaces at a Glance
+
+The component system is built on three interfaces, all in `Microsoft.Xna.Framework`:
+
+<CardGroup cols={3}>
+  <Card title="IGameComponent" icon="plug">
+    **`Initialize()`** — called once when the component is added to a running game, or during `Game.Initialize()` for components already present at startup.
+  </Card>
+  <Card title="IUpdateable" icon="rotate">
+    **`Update(GameTime)`**, **`Enabled`**, **`UpdateOrder`** — opts the component into the update pass. When `Enabled` is `false`, `Update` is skipped.
+  </Card>
+  <Card title="IDrawable" icon="paintbrush">
+    **`Draw(GameTime)`**, **`Visible`**, **`DrawOrder`** — opts the component into the draw pass. When `Visible` is `false`, `Draw` is skipped.
+  </Card>
+</CardGroup>
+
+---
+
+## `GameComponent`
+
+`GameComponent` implements `IGameComponent` and `IUpdateable`. It is the right base class for subsystems that have logic but no rendering (input managers, audio systems, AI tick managers, etc.).
+
+```csharp
+public class GameComponent : IGameComponent, IUpdateable, IDisposable
+{
+    public Game Game { get; private set; }
+
+    // IUpdateable
+    public bool Enabled    { get; set; }   // default: true
+    public int  UpdateOrder { get; set; }  // lower = earlier
+
+    public event EventHandler<EventArgs> EnabledChanged;
+    public event EventHandler<EventArgs> UpdateOrderChanged;
+
+    public GameComponent(Game game) { ... }
+
+    public virtual void Initialize() { }
+    public virtual void Update(GameTime gameTime) { }
+}
+```
+
+### Minimal Example
+
+```csharp
+public class InputManager : GameComponent
+{
+    private KeyboardState _previous;
+
+    public InputManager(Game game) : base(game) { }
+
+    public override void Initialize()
+    {
+        _previous = Keyboard.GetState();
+    }
+
+    public override void Update(GameTime gameTime)
+    {
+        var current = Keyboard.GetState();
+
+        if (current.IsKeyDown(Keys.Space) && _previous.IsKeyUp(Keys.Space))
+            Game.Components.OfType<PlayerComponent>().FirstOrDefault()?.Jump();
+
+        _previous = current;
+    }
+}
+```
+
+Register it once in the `Game` constructor:
+
+```csharp
+public Game1()
+{
+    _graphics = new GraphicsDeviceManager(this);
+    Content.RootDirectory = "Content";
+
+    Components.Add(new InputManager(this));
+}
+```
+
+---
+
+## `DrawableGameComponent`
+
+`DrawableGameComponent` extends `GameComponent` and additionally implements `IDrawable`. Use it for subsystems that both update *and* render — HUD layers, particle systems, debug overlays.
+
+```csharp
+public class DrawableGameComponent : GameComponent, IDrawable
+{
+    public GraphicsDevice GraphicsDevice { get; } // shortcut to Game.GraphicsDevice
+
+    // IDrawable
+    public bool Visible   { get; set; }  // default: true
+    public int  DrawOrder { get; set; }  // lower = drawn first (underneath)
+
+    public event EventHandler<EventArgs> VisibleChanged;
+    public event EventHandler<EventArgs> DrawOrderChanged;
+
+    public DrawableGameComponent(Game game) : base(game) { }
+
+    // Called during Initialize() — load graphics resources here
+    protected virtual void LoadContent()   { }
+    protected virtual void UnloadContent() { }
+
+    public virtual void Draw(GameTime gameTime) { }
+}
+```
+
+<Note>
+  `DrawableGameComponent.Initialize()` automatically calls `LoadContent()` the first time it runs. You do **not** need to call `base.LoadContent()` from the owning `Game` class.
+</Note>
+
+---
+
+## Ordering: `UpdateOrder` and `DrawOrder`
+
+MonoGame maintains two internally sorted lists — one for `IUpdateable` components and one for `IDrawable` components. Items with **lower** order values execute **first**.
+
+```csharp
+// Background renders before foreground
+var background = new BackgroundLayer(this) { DrawOrder = 0 };
+var foreground = new ForegroundLayer(this) { DrawOrder = 10 };
+var hud        = new HudOverlay(this)      { DrawOrder = 20 };
+
+Components.Add(background);
+Components.Add(foreground);
+Components.Add(hud);
+```
+
+Changing `DrawOrder` or `UpdateOrder` at runtime re-sorts the lists automatically — MonoGame subscribes to the `DrawOrderChanged` / `UpdateOrderChanged` events internally.
+
+<Tip>
+  Leave gaps between order values (0, 10, 20, …) so you can insert components between existing ones later without renumbering everything.
+</Tip>
+
+---
+
+## `GameServiceContainer`
+
+`Services` is a type-keyed dictionary that lets components discover shared singletons without holding direct references. Register a service with `AddService` and retrieve it with `GetService<T>`.
+
+<Tabs>
+  <Tab title="Register a service">
+    ```csharp
+    // In Game1's constructor or Initialize():
+    var audioManager = new AudioManager(this);
+    Components.Add(audioManager);
+    Services.AddService<IAudioManager>(audioManager);
+    ```
+  </Tab>
+  <Tab title="Consume a service">
+    ```csharp
+    // In another component's Initialize():
+    public override void Initialize()
+    {
+        _audio = Game.Services.GetService<IAudioManager>();
+        base.Initialize();
+    }
+    ```
+  </Tab>
+  <Tab title="Interface definition">
+    ```csharp
+    public interface IAudioManager
+    {
+        void PlaySfx(string assetName);
+        void PlayMusic(string assetName);
+    }
+    ```
+  </Tab>
+</Tabs>
+
+`GetService` returns `null` if nothing is registered, so guard against missing services:
+
+```csharp
+var audio = Game.Services.GetService<IAudioManager>()
+    ?? throw new InvalidOperationException("IAudioManager not registered.");
+```
+
+---
+
+## When to Use Components vs. Direct Game Logic
+
+<CardGroup cols={2}>
+  <Card title="Use components when…" icon="check">
+    - The subsystem is reusable across multiple games or scenes (FPS counter, debug console, camera)
+    - The subsystem has a clear enable/disable toggle (`Enabled` / `Visible`)
+    - You want draw ordering separate from code ordering
+    - The subsystem depends on services resolved at runtime
+  </Card>
+  <Card title="Keep in Game1 when…" icon="x">
+    - The logic is tightly coupled to your specific game and unlikely to be reused
+    - You need fine-grained control over call order that doesn't map to `UpdateOrder`
+    - The overhead of the component abstraction outweighs the organizational benefit for a very small game
+  </Card>
+</CardGroup>
+
+---
+
+## Full Example: `FpsCounter` Component
+
+An `FpsCounter` extends `DrawableGameComponent` to measure and display the current frames per second. It demonstrates `LoadContent`, `Update`, `Draw`, and consuming a service.
+
+```csharp
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+
+/// <summary>
+/// A DrawableGameComponent that renders a live FPS counter in the top-left corner.
+/// </summary>
+public class FpsCounter : DrawableGameComponent
+{
+    private SpriteBatch _spriteBatch;
+    private SpriteFont  _font;
+
+    // Measurement state
+    private int    _frameCount;
+    private double _elapsedTime;
+    private int    _fps;
+
+    // Draw on top of everything else
+    public FpsCounter(Game game) : base(game)
+    {
+        DrawOrder   = 1000;
+        UpdateOrder = 1000;
+    }
+
+    protected override void LoadContent()
+    {
+        _spriteBatch = new SpriteBatch(GraphicsDevice);
+        _font        = Game.Content.Load<SpriteFont>("Fonts/default");
+    }
+
+    public override void Update(GameTime gameTime)
+    {
+        _elapsedTime += gameTime.ElapsedGameTime.TotalSeconds;
+        _frameCount++;
+
+        if (_elapsedTime >= 1.0)
+        {
+            _fps         = _frameCount;
+            _frameCount  = 0;
+            _elapsedTime -= 1.0;
+        }
+    }
+
+    public override void Draw(GameTime gameTime)
+    {
+        _spriteBatch.Begin();
+        _spriteBatch.DrawString(
+            _font,
+            $"FPS: {_fps}",
+            new Vector2(10, 10),
+            Color.Yellow);
+        _spriteBatch.End();
+    }
+}
+```
+
+Register it in `Game1`:
+
+```csharp
+public Game1()
+{
+    _graphics = new GraphicsDeviceManager(this);
+    Content.RootDirectory = "Content";
+
+    // FPS counter is always active; toggle Visible to hide it.
+    Components.Add(new FpsCounter(this));
+}
+```
+
+Toggle the counter at runtime:
+
+```csharp
+protected override void Update(GameTime gameTime)
+{
+    if (Keyboard.GetState().IsKeyDown(Keys.F1))
+    {
+        var fps = Components.OfType<FpsCounter>().FirstOrDefault();
+        if (fps != null)
+            fps.Visible = !fps.Visible;
+    }
+    base.Update(gameTime);
+}
+```

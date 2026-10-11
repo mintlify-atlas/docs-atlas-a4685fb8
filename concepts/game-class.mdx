@@ -1,0 +1,362 @@
+---
+title: "The Game Class: MonoGame's Application Entry Point"
+sidebarTitle: "Game Class"
+description: "The Game class is the foundation of every MonoGame application. It manages the game loop, services, components, and the graphics device lifecycle."
+---
+
+Every MonoGame application is built around a single `Game` instance. It is the application root: it creates the window, boots the graphics device, drives the game loop, and owns the central service locator. You subclass `Game` — typically naming that class `Game1` — and override its lifecycle methods to supply your game-specific logic. All other MonoGame subsystems, from content loading to audio to input, are accessible through properties that `Game` exposes.
+
+## Class Overview
+
+`Game` lives in the `Microsoft.Xna.Framework` namespace and implements `IDisposable`. It does not inherit from any framework base class of its own — it *is* the framework root. Internally it holds:
+
+- a `GameComponentCollection` (`Components`) — ordered, automatically updated/drawn subsystems
+- a `GameServiceContainer` (`Services`) — a type-keyed service locator
+- a `ContentManager` (`Content`) — the asset pipeline entry point
+- a `GamePlatform` — the platform abstraction that owns the native window and run loop
+
+```csharp
+namespace Microsoft.Xna.Framework
+{
+    public partial class Game : IDisposable
+    {
+        public GameComponentCollection Components { get; }
+        public GameServiceContainer     Services   { get; }
+        public ContentManager           Content    { get; set; }
+        public GraphicsDevice           GraphicsDevice { get; }
+        public GameWindow               Window         { get; }
+        // ...
+    }
+}
+```
+
+---
+
+## Constructor Responsibilities
+
+The `Game()` constructor sets up the plumbing before any platform window exists. Your override must do two things:
+
+1. **Create a `GraphicsDeviceManager`** — this registers itself into `Services` and drives device creation.
+2. **Set `Content.RootDirectory`** — tells the content pipeline where to find compiled `.xnb` asset files.
+
+```csharp
+public Game1()
+{
+    _graphics = new GraphicsDeviceManager(this);
+    Content.RootDirectory = "Content";
+
+    // Optional tweaks before the device is created:
+    _graphics.PreferredBackBufferWidth  = 1280;
+    _graphics.PreferredBackBufferHeight = 720;
+    IsMouseVisible = true;
+}
+```
+
+<Warning>
+  Do **not** access `GraphicsDevice` inside the constructor — the device does not exist yet. Defer all graphics work to `Initialize()` or `LoadContent()`.
+</Warning>
+
+---
+
+## Lifecycle Methods
+
+MonoGame calls the lifecycle methods in a fixed order. Understanding that order is essential to placing initialization and resource management code correctly.
+
+<Steps>
+  <Step title="Initialize()">
+    Called once, after the graphics device has been created but before the first `Update`/`Draw`. The base implementation initialises all `Components` that were added before `Run()` was called, then calls `LoadContent()`.
+
+    ```csharp
+    protected override void Initialize()
+    {
+        // Set up non-graphical state, cameras, physics worlds, etc.
+        // Always call base — it initializes Components and then calls LoadContent().
+        base.Initialize();
+    }
+    ```
+
+    <Note>
+      Always call `base.Initialize()`. If you skip it, `Components` are never initialised and `LoadContent()` is never invoked.
+    </Note>
+  </Step>
+
+  <Step title="LoadContent()">
+    Called by `base.Initialize()` immediately after the components have been initialised. Create your `SpriteBatch` and load all startup assets here.
+
+    ```csharp
+    protected override void LoadContent()
+    {
+        _spriteBatch = new SpriteBatch(GraphicsDevice);
+        _playerTexture = Content.Load<Texture2D>("Textures/player");
+        _font          = Content.Load<SpriteFont>("Fonts/default");
+    }
+    ```
+  </Step>
+
+  <Step title="Update(GameTime gameTime)">
+    Called every frame (or multiple times per frame when the game is running slowly and `IsFixedTimeStep` is `true`). Process input, advance simulations, and update game state here. The base implementation calls `Update` on every enabled `GameComponent` in `UpdateOrder` sequence.
+
+    ```csharp
+    protected override void Update(GameTime gameTime)
+    {
+        if (Keyboard.GetState().IsKeyDown(Keys.Escape))
+            Exit();
+
+        _player.Update(gameTime);
+
+        base.Update(gameTime); // updates GameComponents
+    }
+    ```
+  </Step>
+
+  <Step title="Draw(GameTime gameTime)">
+    Called once per frame, after all `Update` calls for that frame. Render your scene here. The base implementation calls `Draw` on every visible `DrawableGameComponent` in `DrawOrder` sequence.
+
+    ```csharp
+    protected override void Draw(GameTime gameTime)
+    {
+        GraphicsDevice.Clear(Color.CornflowerBlue);
+
+        _spriteBatch.Begin();
+        _spriteBatch.Draw(_playerTexture, _playerPosition, Color.White);
+        _spriteBatch.End();
+
+        base.Draw(gameTime); // draws DrawableGameComponents
+    }
+    ```
+  </Step>
+
+  <Step title="UnloadContent()">
+    Called when the game is exiting (triggered by `Exit()`). The default `ContentManager` disposes all loaded assets automatically, so you normally only need this override if you created additional `ContentManager` instances or other unmanaged resources.
+
+    ```csharp
+    protected override void UnloadContent()
+    {
+        // Content.Unload() is called automatically.
+        // Dispose any extra ContentManagers here.
+        _levelContent?.Unload();
+    }
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Key Properties
+
+<CardGroup cols={2}>
+  <Card title="Content" icon="folder-open">
+    The game's primary `ContentManager`. Set `Content.RootDirectory` in the constructor, then call `Content.Load<T>()` in `LoadContent()`.
+  </Card>
+  <Card title="Components" icon="puzzle-piece">
+    `GameComponentCollection` — add `GameComponent` / `DrawableGameComponent` instances here to integrate them into the loop.
+  </Card>
+  <Card title="Services" icon="screwdriver-wrench">
+    `GameServiceContainer` — a type-keyed service locator for sharing singletons (e.g. `IGraphicsDeviceService`) across components.
+  </Card>
+  <Card title="GraphicsDevice" icon="display">
+    The active `GraphicsDevice`. Not available until after `Initialize()` has started.
+  </Card>
+  <Card title="Window" icon="window">
+    The native `GameWindow`. Exposes `Title`, `ClientBounds`, `AllowUserResizing`, and orientation events.
+  </Card>
+  <Card title="IsActive" icon="eye">
+    `true` when the game window has focus. Use this to pause logic when the player alt-tabs away.
+  </Card>
+</CardGroup>
+
+| Property | Type | Default | Notes |
+|---|---|---|---|
+| `IsFixedTimeStep` | `bool` | `true` | Whether the loop targets a fixed frame rate |
+| `TargetElapsedTime` | `TimeSpan` | ~16.67 ms (60 fps) | Target frame duration when `IsFixedTimeStep` is `true` |
+| `IsMouseVisible` | `bool` | `false` | Show/hide the OS cursor over the window |
+| `InactiveSleepTime` | `TimeSpan` | 20 ms | CPU sleep between frames when the window is inactive |
+| `MaxElapsedTime` | `TimeSpan` | 500 ms | Cap on catch-up update time to prevent a death spiral |
+| `LaunchParameters` | `LaunchParameters` | empty | Dictionary of command-line key/value pairs |
+
+---
+
+## Running the Game
+
+### `Run()` and `RunOneFrame()`
+
+`Run()` starts the platform's native run loop using the default behavior for the current platform (synchronous on desktop, asynchronous on mobile). It blocks until `Exit()` is called on desktop targets.
+
+```csharp
+// Program.cs
+using var game = new Game1();
+game.Run();
+```
+
+`RunOneFrame()` initializes the game if needed, ticks exactly once, then returns. This is useful for embedding MonoGame inside another application's loop or for writing deterministic tests.
+
+```csharp
+// Embed MonoGame in an external loop
+var game = new Game1();
+while (externalCondition)
+    game.RunOneFrame();
+```
+
+### `Exit()`
+
+Signals the game loop to stop at the end of the current tick. `UnloadContent()` is called before the platform window closes.
+
+```csharp
+protected override void Update(GameTime gameTime)
+{
+    if (GamePad.GetState(PlayerIndex.One).Buttons.Back == ButtonState.Pressed
+        || Keyboard.GetState().IsKeyDown(Keys.Escape))
+    {
+        Exit();
+    }
+    base.Update(gameTime);
+}
+```
+
+<Note>
+  On iOS, calling `Exit()` throws `NotSupportedException` — App Store guidelines prohibit programmatic exit. Use `IsActive` checks instead.
+</Note>
+
+---
+
+## Focus Events
+
+Override `OnActivated` and `OnDeactivated` to react when the player switches to or from your window:
+
+```csharp
+protected override void OnActivated(object sender, EventArgs args)
+{
+    base.OnActivated(sender, args);
+    // Resume music, re-acquire input devices, etc.
+    MediaPlayer.Resume();
+}
+
+protected override void OnDeactivated(object sender, EventArgs args)
+{
+    base.OnDeactivated(sender, args);
+    // Pause music, save state, etc.
+    MediaPlayer.Pause();
+}
+```
+
+You can also subscribe to the `Activated` and `Deactivated` events directly from outside the class.
+
+---
+
+## LaunchParameters
+
+`LaunchParameters` is a `Dictionary<string, string>` populated from the command line before `Run()` is called. Keys map to argument names; values map to argument values.
+
+```csharp
+// Program.cs
+using var game = new Game1();
+game.Run();
+
+// Game1.cs — read a custom flag
+protected override void Initialize()
+{
+    if (LaunchParameters.TryGetValue("debug", out string val) && val == "true")
+        _debugOverlayEnabled = true;
+
+    base.Initialize();
+}
+```
+
+---
+
+## Complete Example
+
+Below is a fully-featured `Game1.cs` that demonstrates every lifecycle method described above:
+
+```csharp
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+using Microsoft.Xna.Framework.Input;
+
+public class Game1 : Game
+{
+    private GraphicsDeviceManager _graphics;
+    private SpriteBatch           _spriteBatch;
+
+    private Texture2D _playerTexture;
+    private Vector2   _playerPosition = new Vector2(100, 100);
+    private float     _speed          = 200f;
+
+    public Game1()
+    {
+        _graphics = new GraphicsDeviceManager(this);
+        Content.RootDirectory = "Content";
+
+        _graphics.PreferredBackBufferWidth  = 1280;
+        _graphics.PreferredBackBufferHeight = 720;
+        IsMouseVisible = true;
+    }
+
+    protected override void Initialize()
+    {
+        // Non-graphical setup goes here.
+        Window.Title = "My MonoGame Game";
+
+        // base.Initialize() calls LoadContent() after initializing Components.
+        base.Initialize();
+    }
+
+    protected override void LoadContent()
+    {
+        _spriteBatch   = new SpriteBatch(GraphicsDevice);
+        _playerTexture = Content.Load<Texture2D>("Textures/player");
+    }
+
+    protected override void Update(GameTime gameTime)
+    {
+        var kb = Keyboard.GetState();
+
+        if (kb.IsKeyDown(Keys.Escape))
+            Exit();
+
+        float delta = (float)gameTime.ElapsedGameTime.TotalSeconds;
+
+        if (kb.IsKeyDown(Keys.Left))  _playerPosition.X -= _speed * delta;
+        if (kb.IsKeyDown(Keys.Right)) _playerPosition.X += _speed * delta;
+        if (kb.IsKeyDown(Keys.Up))    _playerPosition.Y -= _speed * delta;
+        if (kb.IsKeyDown(Keys.Down))  _playerPosition.Y += _speed * delta;
+
+        base.Update(gameTime);
+    }
+
+    protected override void Draw(GameTime gameTime)
+    {
+        GraphicsDevice.Clear(Color.CornflowerBlue);
+
+        _spriteBatch.Begin();
+        _spriteBatch.Draw(_playerTexture, _playerPosition, Color.White);
+        _spriteBatch.End();
+
+        base.Draw(gameTime);
+    }
+
+    protected override void UnloadContent()
+    {
+        // ContentManager disposes its assets automatically.
+        // Add cleanup for any manually managed resources here.
+    }
+
+    protected override void OnActivated(object sender, EventArgs args)
+    {
+        base.OnActivated(sender, args);
+        // Window has focus again.
+    }
+
+    protected override void OnDeactivated(object sender, EventArgs args)
+    {
+        base.OnDeactivated(sender, args);
+        // Window lost focus.
+    }
+}
+```
+
+```csharp
+// Program.cs
+using var game = new Game1();
+game.Run();
+```

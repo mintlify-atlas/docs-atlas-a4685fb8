@@ -1,0 +1,506 @@
+---
+title: "Drawing 2D Sprites and Text with SpriteBatch"
+sidebarTitle: "SpriteBatch"
+description: "SpriteBatch is MonoGame's batched 2D drawing API. Learn Begin/End, sort modes, blend states, transformations, and how to draw textures and text efficiently."
+---
+
+`SpriteBatch` is MonoGame's primary API for rendering 2D content. It collects draw calls into a single batch and submits them to the GPU together, dramatically reducing the per-draw overhead compared to issuing individual GPU commands. Every 2D game in MonoGame — from simple HUDs to full sprite-based worlds — relies on `SpriteBatch` as its rendering backbone.
+
+## Constructor
+
+```csharp
+SpriteBatch spriteBatch = new SpriteBatch(GraphicsDevice graphicsDevice);
+```
+
+The constructor takes the `GraphicsDevice` instance that all drawing will target. Typically you create a single `SpriteBatch` in your `Game.LoadContent` override and reuse it for the lifetime of the game.
+
+```csharp
+private SpriteBatch _spriteBatch;
+
+protected override void LoadContent()
+{
+    _spriteBatch = new SpriteBatch(GraphicsDevice);
+}
+```
+
+<Note>
+`SpriteBatch` extends `GraphicsResource`. It must be `Dispose()`d when no longer needed to free the internal GPU resources.
+</Note>
+
+A second constructor overload accepts an `int capacity` hint that pre-allocates the internal batch buffer to the nearest multiple of 64. Use this when you know you'll be drawing many sprites per frame and want to avoid re-allocation.
+
+```csharp
+// Pre-allocate for ~1000 sprites
+_spriteBatch = new SpriteBatch(GraphicsDevice, 1024);
+```
+
+---
+
+## The Begin / End Pattern
+
+All draw calls must be issued between a matching `Begin` and `End` call. Calling `Begin` twice without an intervening `End`, or calling `End` without a prior `Begin`, throws an `InvalidOperationException`.
+
+```csharp
+protected override void Draw(GameTime gameTime)
+{
+    GraphicsDevice.Clear(Color.CornflowerBlue);
+
+    _spriteBatch.Begin();
+
+    // ... Draw calls here ...
+
+    _spriteBatch.End();
+
+    base.Draw(gameTime);
+}
+```
+
+### Begin Signature
+
+```csharp
+public void Begin(
+    SpriteSortMode sortMode         = SpriteSortMode.Deferred,
+    BlendState blendState           = null,   // defaults to BlendState.AlphaBlend
+    SamplerState samplerState       = null,   // defaults to SamplerState.LinearClamp
+    DepthStencilState depthStencilState = null, // defaults to DepthStencilState.None
+    RasterizerState rasterizerState = null,   // defaults to RasterizerState.CullCounterClockwise
+    Effect effect                   = null,   // defaults to built-in sprite shader
+    Matrix? transformMatrix         = null    // defaults to Matrix.Identity
+)
+```
+
+All parameters are optional and have sensible defaults for typical 2D rendering.
+
+### End
+
+```csharp
+public void End();
+```
+
+`End` flushes all accumulated draw calls to the GPU. In `Deferred` mode (the default), no actual rendering happens until `End` is called. In `Immediate` mode each draw call is flushed individually.
+
+---
+
+## SpriteSortMode
+
+`SpriteSortMode` controls the order in which sprites are sent to the GPU and whether they are sorted before submission.
+
+<Tabs>
+  <Tab title="Deferred (default)">
+    Sprites accumulate in a list. All rendering happens when `End()` is called, in the order they were submitted. Depth values are ignored for sorting. This is the most efficient mode.
+
+    ```csharp
+    _spriteBatch.Begin(SpriteSortMode.Deferred);
+    ```
+  </Tab>
+  <Tab title="Immediate">
+    Each draw call is flushed to the GPU immediately. Useful when you need to change GPU state (e.g., swap an `Effect`) between individual sprites. Slower than `Deferred`.
+
+    ```csharp
+    _spriteBatch.Begin(SpriteSortMode.Immediate);
+    ```
+  </Tab>
+  <Tab title="Texture">
+    Sprites are batched in `Deferred` style but sorted by their texture object before rendering. Minimises texture-switch overhead when drawing many different textures.
+
+    ```csharp
+    _spriteBatch.Begin(SpriteSortMode.Texture);
+    ```
+  </Tab>
+  <Tab title="BackToFront">
+    Sprites are sorted by their `layerDepth` parameter in descending order (high depth = drawn first = behind). Useful for painter's-algorithm layering. Uses an unstable sort.
+
+    ```csharp
+    _spriteBatch.Begin(SpriteSortMode.BackToFront);
+    ```
+  </Tab>
+  <Tab title="FrontToBack">
+    Sprites are sorted by `layerDepth` in ascending order (low depth = drawn first = in front). Useful when rendering opaque sprites to take advantage of early-Z rejection. Uses an unstable sort.
+
+    ```csharp
+    _spriteBatch.Begin(SpriteSortMode.FrontToBack);
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+For most games, `Deferred` is the right default. Switch to `BackToFront` only when you need depth-sorted transparency, and `Texture` when profiling shows many texture-bind state changes.
+</Tip>
+
+---
+
+## BlendState
+
+`BlendState` controls how a sprite's pixels are composited onto the render target.
+
+| Value | Description |
+|---|---|
+| `BlendState.AlphaBlend` | Standard alpha blending (default). Transparent areas show through. |
+| `BlendState.Additive` | Pixel colours are added. Ideal for glows, fire, and light effects. |
+| `BlendState.NonPremultiplied` | Alpha blending for textures whose colour channels are **not** premultiplied by alpha. |
+| `BlendState.Opaque` | Ignores alpha; every pixel is drawn fully opaque. Fastest option for solid sprites. |
+
+```csharp
+// Glow / particle pass
+_spriteBatch.Begin(blendState: BlendState.Additive);
+_spriteBatch.Draw(_glowTexture, position, Color.White);
+_spriteBatch.End();
+```
+
+<Note>
+MonoGame's Content Pipeline premultiplies texture alpha by default. Use `BlendState.AlphaBlend` (premultiplied) unless you explicitly import textures without premultiplication.
+</Note>
+
+---
+
+## SamplerState
+
+`SamplerState` controls how the GPU samples texels when a texture is scaled or rotated.
+
+| Value | Best For |
+|---|---|
+| `SamplerState.LinearClamp` | Smooth scaling; good for photos and UI (default). |
+| `SamplerState.PointClamp` | Hard pixel edges; essential for pixel-art games. |
+| `SamplerState.AnisotropicClamp` | High-quality filtering at oblique angles. |
+
+```csharp
+// Crisp pixel-art rendering
+_spriteBatch.Begin(samplerState: SamplerState.PointClamp);
+```
+
+---
+
+## Draw Overloads
+
+### Simplest Form — Position and Tint
+
+```csharp
+public void Draw(Texture2D texture, Vector2 position, Color color);
+```
+
+Draws the entire texture at `position` (top-left corner) with a colour tint/mask. Pass `Color.White` to draw without any tint.
+
+```csharp
+_spriteBatch.Draw(_playerTexture, new Vector2(100, 200), Color.White);
+```
+
+### Stretch to a Rectangle
+
+```csharp
+public void Draw(Texture2D texture, Rectangle destinationRectangle, Color color);
+```
+
+Stretches the entire texture to fill `destinationRectangle`. Useful for backgrounds and UI panels.
+
+```csharp
+var screenRect = new Rectangle(0, 0, 1920, 1080);
+_spriteBatch.Draw(_backgroundTexture, screenRect, Color.White);
+```
+
+### Source Rectangle (Sprite Sheet Frame)
+
+```csharp
+public void Draw(Texture2D texture, Vector2 position, Rectangle? sourceRectangle, Color color);
+```
+
+Draws only the sub-region of the texture defined by `sourceRectangle`. Pass `null` to draw the whole texture.
+
+```csharp
+// Draw frame 3 from a 64×64-pixel sprite sheet where frames are 16×16
+var frameSource = new Rectangle(32, 0, 16, 16); // column 2, row 0
+_spriteBatch.Draw(_spriteSheet, new Vector2(100, 100), frameSource, Color.White);
+```
+
+### Full Overload — Rotation, Origin, Scale, Effects, Depth
+
+```csharp
+public void Draw(
+    Texture2D texture,
+    Vector2 position,
+    Rectangle? sourceRectangle,
+    Color color,
+    float rotation,
+    Vector2 origin,
+    float scale,
+    SpriteEffects effects,
+    float layerDepth
+);
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `texture` | `Texture2D` | The texture to draw. |
+| `position` | `Vector2` | Screen position of the origin point. |
+| `sourceRectangle` | `Rectangle?` | Sub-region of the texture, or `null` for the whole texture. |
+| `color` | `Color` | Colour mask. `Color.White` = no tint. |
+| `rotation` | `float` | Clockwise rotation in **radians**. |
+| `origin` | `Vector2` | Pivot point in texture-space (used for rotation and positioning). |
+| `scale` | `float` | Uniform scale multiplier. |
+| `effects` | `SpriteEffects` | Flip flags: `None`, `FlipHorizontally`, `FlipVertically`. |
+| `layerDepth` | `float` | Depth value `[0.0, 1.0]` used when sort mode is `BackToFront` or `FrontToBack`. |
+
+A `Vector2 scale` variant also exists when you need non-uniform X/Y scaling.
+
+#### Drawing a Rotated Sprite with a Centred Origin
+
+```csharp
+// Rotate a 64×64 sprite around its centre
+Vector2 origin = new Vector2(32, 32); // centre of the texture
+float rotation = MathHelper.ToRadians(45f); // 45 degrees
+
+_spriteBatch.Draw(
+    _texture,
+    position: new Vector2(400, 300),
+    sourceRectangle: null,
+    color: Color.White,
+    rotation: rotation,
+    origin: origin,
+    scale: 1.0f,
+    effects: SpriteEffects.None,
+    layerDepth: 0f
+);
+```
+
+<Tip>
+When `origin` is `Vector2.Zero` (the default), the top-left corner of the sprite is placed at `position`. Set `origin` to `texture.Width / 2, texture.Height / 2` to rotate or scale around the sprite's centre.
+</Tip>
+
+#### Drawing a Sprite Sheet Frame with the Full Overload
+
+```csharp
+// Animation frame — 16×16 tile at column 2 on a sprite sheet
+var source = new Rectangle(32, 0, 16, 16);
+Vector2 origin = new Vector2(8, 8); // centre of the 16×16 frame
+
+_spriteBatch.Draw(
+    _spriteSheet,
+    position: new Vector2(200, 150),
+    sourceRectangle: source,
+    color: Color.White,
+    rotation: 0f,
+    origin: origin,
+    scale: 2.0f,               // draw at 2× size
+    effects: SpriteEffects.None,
+    layerDepth: 0.5f
+);
+```
+
+---
+
+## SpriteEffects — Flipping
+
+`SpriteEffects` is a `[Flags]` enum, so values can be combined with the bitwise OR operator.
+
+```csharp
+// Flip horizontally (mirror along Y axis)
+_spriteBatch.Draw(_texture, position, null, Color.White, 0f,
+    Vector2.Zero, 1f, SpriteEffects.FlipHorizontally, 0f);
+
+// Flip vertically (mirror along X axis)
+_spriteBatch.Draw(_texture, position, null, Color.White, 0f,
+    Vector2.Zero, 1f, SpriteEffects.FlipVertically, 0f);
+
+// Flip both axes
+_spriteBatch.Draw(_texture, position, null, Color.White, 0f,
+    Vector2.Zero, 1f,
+    SpriteEffects.FlipHorizontally | SpriteEffects.FlipVertically,
+    0f);
+```
+
+---
+
+## Layer Depth
+
+`layerDepth` is a `float` in the range `[0.0, 1.0]`. Its meaning depends on the active `SpriteSortMode`:
+
+- **`BackToFront`** — higher values are drawn first (further back). `1.0` = back, `0.0` = front.
+- **`FrontToBack`** — lower values are drawn first (further forward). `0.0` = front, `1.0` = back.
+- **`Deferred` / `Immediate` / `Texture`** — `layerDepth` is recorded but not used for sorting; draw-order is determined by call sequence.
+
+```csharp
+_spriteBatch.Begin(SpriteSortMode.BackToFront);
+
+// Background drawn behind (depth 1.0)
+_spriteBatch.Draw(_background, Vector2.Zero, null, Color.White,
+    0f, Vector2.Zero, 1f, SpriteEffects.None, layerDepth: 1.0f);
+
+// Player drawn in front (depth 0.0)
+_spriteBatch.Draw(_player, playerPos, null, Color.White,
+    0f, Vector2.Zero, 1f, SpriteEffects.None, layerDepth: 0.0f);
+
+_spriteBatch.End();
+```
+
+---
+
+## DrawString
+
+`SpriteBatch` can also render text glyphs from a `SpriteFont`.
+
+### Basic Overload
+
+```csharp
+public void DrawString(SpriteFont spriteFont, string text, Vector2 position, Color color);
+```
+
+```csharp
+_spriteBatch.Begin();
+_spriteBatch.DrawString(_font, "Score: 9001", new Vector2(10, 10), Color.White);
+_spriteBatch.End();
+```
+
+### Full Overload — with Rotation, Origin, Scale, Effects, Depth
+
+```csharp
+public void DrawString(
+    SpriteFont spriteFont,
+    string text,
+    Vector2 position,
+    Color color,
+    float rotation,
+    Vector2 origin,
+    float scale,
+    SpriteEffects effects,
+    float layerDepth
+);
+```
+
+A `Vector2 scale` variant exists for non-uniform scaling. Use this when you need to animate or transform your text labels.
+
+```csharp
+// Draw "PAUSED" centred on screen, scaled up 2×
+string msg = "PAUSED";
+Vector2 textSize = _font.MeasureString(msg);
+Vector2 origin   = textSize / 2f;
+Vector2 centre   = new Vector2(GraphicsDevice.Viewport.Width / 2f,
+                               GraphicsDevice.Viewport.Height / 2f);
+
+_spriteBatch.Begin();
+_spriteBatch.DrawString(
+    _font, msg, centre, Color.Yellow,
+    rotation: 0f, origin: origin, scale: 2.0f,
+    effects: SpriteEffects.None, layerDepth: 0f);
+_spriteBatch.End();
+```
+
+### StringBuilder Overload (Performance)
+
+```csharp
+public void DrawString(SpriteFont spriteFont, StringBuilder text, Vector2 position, Color color);
+```
+
+Using a `StringBuilder` avoids allocating a new `string` object every frame — important for frequently-updated labels such as score counters and timers.
+
+```csharp
+private StringBuilder _scoreText = new StringBuilder(32);
+
+protected override void Draw(GameTime gameTime)
+{
+    _scoreText.Clear();
+    _scoreText.Append("Score: ");
+    _scoreText.Append(_score);
+
+    _spriteBatch.Begin();
+    _spriteBatch.DrawString(_font, _scoreText, new Vector2(10, 10), Color.White);
+    _spriteBatch.End();
+}
+```
+
+---
+
+## Camera Transform Matrix
+
+Passing a `Matrix` to `Begin` applies a global 2D transformation to everything drawn in that batch. This is the standard technique for implementing a 2D camera with scrolling, zoom, and rotation.
+
+```csharp
+// Simple 2D camera: translate and zoom
+float zoom = 1.5f;
+Vector2 cameraPosition = new Vector2(200, 100);
+
+Matrix cameraTransform =
+    Matrix.CreateTranslation(-cameraPosition.X, -cameraPosition.Y, 0) *
+    Matrix.CreateScale(zoom, zoom, 1f) *
+    Matrix.CreateTranslation(
+        GraphicsDevice.Viewport.Width  / 2f,
+        GraphicsDevice.Viewport.Height / 2f,
+        0f);
+
+_spriteBatch.Begin(
+    SpriteSortMode.Deferred,
+    BlendState.AlphaBlend,
+    SamplerState.PointClamp,
+    null, null, null,
+    transformMatrix: cameraTransform);
+
+// All sprites are now drawn in camera space
+_spriteBatch.Draw(_worldTexture, worldPosition, Color.White);
+
+_spriteBatch.End();
+```
+
+<Tip>
+The `transformMatrix` affects every coordinate passed to `Draw` and `DrawString` within the same `Begin`/`End` block. Use separate `Begin`/`End` blocks for elements that should remain fixed on-screen (HUD, menus).
+</Tip>
+
+---
+
+## Custom Effect / Shader
+
+To apply a custom HLSL shader to your sprites, pass an `Effect` instance to `Begin`. The `SpriteBatch` will use that effect instead of its built-in sprite shader.
+
+```csharp
+// Load a custom grayscale effect from the content pipeline
+Effect _grayscaleEffect = Content.Load<Effect>("Shaders/Grayscale");
+
+_spriteBatch.Begin(effect: _grayscaleEffect);
+_spriteBatch.Draw(_sceneTexture, Vector2.Zero, Color.White);
+_spriteBatch.End();
+```
+
+<Warning>
+When using `SpriteSortMode.Immediate` with a custom effect, the effect is applied immediately per draw call. With all other sort modes, the effect is applied once when `End()` is called and flushes the batch.
+</Warning>
+
+---
+
+## Complete Example
+
+The following snippet shows a typical `Draw` method using multiple `Begin`/`End` blocks — one for the game world with a camera, and one for the HUD that stays fixed on screen.
+
+```csharp
+protected override void Draw(GameTime gameTime)
+{
+    GraphicsDevice.Clear(Color.Black);
+
+    // --- World pass: camera-space drawing ---
+    _spriteBatch.Begin(
+        SpriteSortMode.BackToFront,
+        BlendState.AlphaBlend,
+        SamplerState.PointClamp,
+        transformMatrix: _camera.TransformMatrix);
+
+    // Background tile (back)
+    _spriteBatch.Draw(_tileset, _tilePosition, _tileSource, Color.White,
+        0f, Vector2.Zero, 1f, SpriteEffects.None, layerDepth: 1.0f);
+
+    // Player sprite, flipped when walking left
+    SpriteEffects flip = _playerFacingLeft
+        ? SpriteEffects.FlipHorizontally
+        : SpriteEffects.None;
+
+    _spriteBatch.Draw(_playerSheet, _playerPosition, _playerFrame,
+        Color.White, 0f, new Vector2(16, 16), 1f, flip, layerDepth: 0.5f);
+
+    _spriteBatch.End();
+
+    // --- HUD pass: fixed screen-space drawing ---
+    _spriteBatch.Begin();
+
+    _spriteBatch.DrawString(_hudFont, $"HP: {_hp}", new Vector2(10, 10), Color.LimeGreen);
+    _spriteBatch.DrawString(_hudFont, $"Score: {_score}", new Vector2(10, 30), Color.White);
+
+    _spriteBatch.End();
+
+    base.Draw(gameTime);
+}
+```

@@ -1,0 +1,341 @@
+---
+title: "Using the MonoGame Content Pipeline to Load Game Assets"
+sidebarTitle: "Content Pipeline"
+description: "Learn how the MonoGame Content Pipeline compiles textures, audio, fonts, and models into optimized .xnb files and how to load them at runtime."
+---
+
+Raw game assets — PNG images, MP3 audio, FBX models, TTF fonts, and HLSL shaders — cannot be loaded directly at runtime in MonoGame. Instead they pass through the **Content Pipeline**, a build-time system that compresses, converts, and packages each asset into a binary `.xnb` file optimized for the target platform. At runtime, `ContentManager.Load<T>()` reads those `.xnb` files and returns strongly-typed objects like `Texture2D`, `SpriteFont`, or `SoundEffect`. This page explains every step of that workflow, from adding an asset to the content project through to loading and unloading it in your game.
+
+## What the Content Pipeline Does
+
+```
+Source asset           Build-time pipeline               Runtime
+(PNG / MP3 / FBX)  →  Importer → Processor → Writer  →  .xnb binary  →  ContentManager.Load<T>()
+```
+
+1. **Importer** – Reads the raw file format and produces an intermediate object.
+2. **Processor** – Transforms the intermediate object (e.g., pre-multiplies alpha on a texture, generates mipmaps, compresses audio).
+3. **Writer** – Serializes the result into the `.xnb` binary format.
+4. **`ContentManager.Load<T>()`** – At runtime, deserializes the `.xnb` file and returns the ready-to-use managed object.
+
+The compiled `.xnb` files are copied to a `Content/` folder next to your game executable during the build step, exactly mirroring the folder hierarchy you defined in your `.mgcb` project.
+
+## The Content Project File (`.mgcb`)
+
+Every MonoGame project contains a `Content/Content.mgcb` file. This is the Content Builder project that lists every asset to compile, which processor to apply, and what output settings to use. It is referenced by your `.csproj` and processed automatically by `dotnet build`.
+
+A minimal `.mgcb` file looks like this:
+
+```
+#----------------------------- Global Properties ----------------------------#
+
+/outputDir:bin/$(Platform)
+/intermediateDir:obj/$(Platform)
+/platform:DesktopGL
+/config:
+/profile:Reach
+/compress:False
+
+#-------------------------------- References --------------------------------#
+
+
+#---------------------------------- Content ---------------------------------#
+
+#begin Textures/player.png
+/importer:TextureImporter
+/processor:TextureProcessor
+/processorParam:ColorKeyColor=255,0,255,255
+/processorParam:ColorKeyEnabled=True
+/processorParam:GenerateMipmaps=False
+/processorParam:PremultiplyAlpha=True
+/processorParam:ResizeToPowerOfTwo=False
+/processorParam:TextureFormat=Color
+/build:Textures/player.png
+```
+
+<Note>
+  You rarely need to edit `.mgcb` by hand. The `mgcb-editor` GUI tool lets you add, configure, and remove assets visually. Open it by running `dotnet mgcb-editor` from the project root, or via the MonoGame menu in Visual Studio 2022.
+</Note>
+
+## Adding Assets
+
+<Steps>
+  <Step title="Place the raw file inside the Content folder">
+    Copy your source asset (e.g. `player.png`) into the `Content/` directory of your project, keeping it organized in subfolders if you prefer:
+
+    ```
+    Content/
+    ├── Content.mgcb
+    ├── Textures/
+    │   └── player.png
+    └── Audio/
+        └── theme.mp3
+    ```
+  </Step>
+
+  <Step title="Register the asset in Content.mgcb">
+    **Using mgcb-editor (recommended):**
+
+    ```bash
+    dotnet mgcb-editor
+    ```
+
+    Click **Edit → Add → Existing Item**, navigate to your file, and save. The editor updates `Content.mgcb` automatically.
+
+    **Manually:** Add a `#begin` block to `Content.mgcb` as shown in the example above, specifying the correct importer and processor for the file type.
+  </Step>
+
+  <Step title="Build the project">
+    ```bash
+    dotnet build
+    ```
+
+    The MonoGame build task invokes `mgcb`, which compiles every asset listed in `Content.mgcb` and places the resulting `.xnb` files in the output directory alongside your executable.
+  </Step>
+</Steps>
+
+## Content.RootDirectory
+
+`ContentManager.RootDirectory` is the base path that `Load<T>()` searches for `.xnb` files. The MonoGame templates set it in the `Game` constructor:
+
+```csharp
+Content.RootDirectory = "Content";
+```
+
+Asset names passed to `Load<T>()` are **relative to this directory** and must **not include the `.xnb` extension**. Use forward slashes for subfolders on all platforms:
+
+```csharp
+// Correct — loads Content/Textures/player.xnb
+var texture = Content.Load<Texture2D>("Textures/player");
+
+// Incorrect — do not include the extension
+var texture = Content.Load<Texture2D>("Textures/player.xnb"); // throws ContentLoadException
+```
+
+## Loading Assets at Runtime
+
+Use `Content.Load<T>(assetName)` in `LoadContent()`. `ContentManager` caches loaded assets: calling `Load<T>()` multiple times with the same name returns the same object instance without re-reading the file.
+
+### Common Type Mappings
+
+| Source Format | C# Type | Example |
+|---|---|---|
+| `.png`, `.jpg`, `.bmp` | `Texture2D` | `Content.Load<Texture2D>("Textures/player")` |
+| `.spritefont` (XML descriptor + TTF) | `SpriteFont` | `Content.Load<SpriteFont>("Fonts/Arial")` |
+| `.wav` | `SoundEffect` | `Content.Load<SoundEffect>("Audio/jump")` |
+| `.mp3`, `.ogg`, `.wma` | `Song` | `Content.Load<Song>("Audio/theme")` |
+| `.fbx`, `.x`, `.obj` | `Model` | `Content.Load<Model>("Models/ship")` |
+| `.fx` (HLSL) | `Effect` | `Content.Load<Effect>("Shaders/blur")` |
+
+### Texture2D
+
+```csharp
+private Texture2D _playerTexture;
+
+protected override void LoadContent()
+{
+    _playerTexture = Content.Load<Texture2D>("Textures/player");
+}
+
+protected override void Draw(GameTime gameTime)
+{
+    GraphicsDevice.Clear(Color.CornflowerBlue);
+
+    _spriteBatch.Begin();
+    _spriteBatch.Draw(_playerTexture, new Vector2(100, 100), Color.White);
+    _spriteBatch.End();
+
+    base.Draw(gameTime);
+}
+```
+
+<Note>
+  As a convenience, `ContentManager.Load<Texture2D>()` can also load raw `.png`, `.jpg`/`.jpeg`, and `.bmp` files **without** running them through the content pipeline first — the asset name must still omit the extension. This is useful for development or for assets that change frequently, but the content pipeline path is recommended for release builds because it applies compression and format optimization.
+</Note>
+
+### SpriteFont
+
+A `.spritefont` file is an XML descriptor that tells the processor which TTF font to rasterize, at what size, and which character ranges to include:
+
+```xml
+<!-- Content/Fonts/Arial.spritefont -->
+<?xml version="1.0" encoding="utf-8"?>
+<XnaContent xmlns:Graphics="Microsoft.Xna.Framework.Content.Pipeline.Graphics">
+  <Asset Type="Graphics:FontDescription">
+    <FontName>Arial</FontName>
+    <Size>24</Size>
+    <Spacing>0</Spacing>
+    <UseKerning>true</UseKerning>
+    <Style>Regular</Style>
+    <CharacterRegions>
+      <CharacterRegion>
+        <Start>&#32;</Start>
+        <End>&#126;</End>
+      </CharacterRegion>
+    </CharacterRegions>
+  </Asset>
+</XnaContent>
+```
+
+```csharp
+private SpriteFont _font;
+
+protected override void LoadContent()
+{
+    _font = Content.Load<SpriteFont>("Fonts/Arial");
+}
+
+protected override void Draw(GameTime gameTime)
+{
+    GraphicsDevice.Clear(Color.CornflowerBlue);
+
+    _spriteBatch.Begin();
+    _spriteBatch.DrawString(_font, "Hello, MonoGame!", new Vector2(50, 50), Color.White);
+    _spriteBatch.End();
+
+    base.Draw(gameTime);
+}
+```
+
+### SoundEffect
+
+`SoundEffect` is for short, one-shot audio played on demand (footsteps, explosions, UI clicks). Load it from a compiled `.wav`:
+
+```csharp
+private SoundEffect _jumpSound;
+
+protected override void LoadContent()
+{
+    _jumpSound = Content.Load<SoundEffect>("Audio/jump");
+}
+
+protected override void Update(GameTime gameTime)
+{
+    if (Keyboard.GetState().IsKeyDown(Keys.Space))
+    {
+        _jumpSound.Play();
+    }
+
+    base.Update(gameTime);
+}
+```
+
+### Song
+
+`Song` is for long-form background music. Use `MediaPlayer` to control playback:
+
+```csharp
+using Microsoft.Xna.Framework.Media;
+
+private Song _themeSong;
+
+protected override void LoadContent()
+{
+    _themeSong = Content.Load<Song>("Audio/theme");
+    MediaPlayer.Play(_themeSong);
+    MediaPlayer.IsRepeating = true;
+}
+```
+
+### Model
+
+`Model` loads 3D geometry from FBX, `.x`, or OBJ files that the content pipeline has processed:
+
+```csharp
+private Model _shipModel;
+
+protected override void LoadContent()
+{
+    _shipModel = Content.Load<Model>("Models/ship");
+}
+
+protected override void Draw(GameTime gameTime)
+{
+    GraphicsDevice.Clear(Color.CornflowerBlue);
+
+    Matrix world = Matrix.CreateRotationY(MathHelper.ToRadians(45f));
+    Matrix view  = Matrix.CreateLookAt(new Vector3(0, 0, 5), Vector3.Zero, Vector3.Up);
+    Matrix proj  = Matrix.CreatePerspectiveFieldOfView(
+                       MathHelper.ToRadians(60f),
+                       GraphicsDevice.Viewport.AspectRatio,
+                       0.1f, 100f);
+
+    foreach (ModelMesh mesh in _shipModel.Meshes)
+    {
+        foreach (BasicEffect effect in mesh.Effects)
+        {
+            effect.World      = world;
+            effect.View       = view;
+            effect.Projection = proj;
+        }
+        mesh.Draw();
+    }
+
+    base.Draw(gameTime);
+}
+```
+
+### Effect (HLSL Shader)
+
+Custom HLSL shaders are compiled by `mgfxc` into `.xnb` files that `ContentManager` loads as `Effect` objects:
+
+```csharp
+private Effect _blurEffect;
+
+protected override void LoadContent()
+{
+    _blurEffect = Content.Load<Effect>("Shaders/blur");
+}
+
+protected override void Draw(GameTime gameTime)
+{
+    GraphicsDevice.Clear(Color.Black);
+
+    _blurEffect.Parameters["BlurAmount"].SetValue(2.0f);
+
+    _spriteBatch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend,
+                       null, null, null, _blurEffect);
+    _spriteBatch.Draw(_playerTexture, Vector2.Zero, Color.White);
+    _spriteBatch.End();
+
+    base.Draw(gameTime);
+}
+```
+
+## Unloading Assets
+
+`ContentManager` tracks every asset it loads. There are three ways to release them:
+
+### Unload all assets
+
+`Unload()` disposes all assets that implement `IDisposable` and clears the internal cache. Subsequent calls to `Load<T>()` will re-read from disk:
+
+```csharp
+Content.Unload();
+```
+
+### Unload a single asset
+
+`UnloadAsset(assetName)` removes and disposes one specific asset by name, using the same relative path you passed to `Load<T>()`:
+
+```csharp
+Content.UnloadAsset("Textures/player");
+```
+
+### Unload a set of assets
+
+`UnloadAssets(IList<string>)` removes and disposes a batch of named assets in one call:
+
+```csharp
+Content.UnloadAssets(new[] { "Textures/player", "Audio/jump" });
+```
+
+<Tip>
+  For large games with distinct levels or scenes, consider creating a separate `ContentManager` per level. When the level ends, dispose the level's `ContentManager` to release all of its assets at once without affecting assets shared by other managers.
+
+  ```csharp
+  var levelContent = new ContentManager(Services, "Content");
+  // ... load level-specific assets ...
+  levelContent.Dispose(); // releases everything loaded through levelContent
+  ```
+</Tip>

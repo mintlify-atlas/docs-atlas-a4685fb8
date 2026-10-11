@@ -1,0 +1,414 @@
+---
+title: "Input API Reference: Keyboard, Mouse, GamePad, Joystick"
+sidebarTitle: "Input"
+description: "API reference for MonoGame's input classes: Keyboard, KeyboardState, Mouse, MouseState, GamePad, GamePadState, Joystick, and TouchPanel."
+---
+
+MonoGame's input system lives in the `Microsoft.Xna.Framework.Input` namespace and provides a polling-based model: call a static `GetState()` method once per frame, store the result in a struct, and query it for button, key, or axis data. Because the state structs are value types, you can keep a copy from the previous frame alongside the current one to detect press and release transitions. The classes covered here are **Keyboard**, **Mouse**, **GamePad**, and **Joystick**, together with their companion state structs and supporting enumerations.
+
+---
+
+## Keyboard
+
+`Keyboard` is a static class that reads the current state of the system keyboard.
+
+### Methods
+
+| Signature | Returns | Description |
+|-----------|---------|-------------|
+| `Keyboard.GetState()` | `KeyboardState` | Returns a snapshot of all keys currently held down. |
+
+<Note>
+The overload `GetState(PlayerIndex)` is obsolete. Use the parameterless form in all new code.
+</Note>
+
+### Example
+
+```csharp
+KeyboardState previous;
+KeyboardState current;
+
+protected override void Update(GameTime gameTime)
+{
+    previous = current;
+    current = Keyboard.GetState();
+
+    // Detect a single-frame press
+    if (current.IsKeyDown(Keys.Space) && previous.IsKeyUp(Keys.Space))
+        FireWeapon();
+
+    // Detect held movement
+    if (current.IsKeyDown(Keys.Right))
+        player.X += speed * (float)gameTime.ElapsedGameTime.TotalSeconds;
+}
+```
+
+---
+
+## KeyboardState
+
+`KeyboardState` is a value-type snapshot of the keyboard returned by `Keyboard.GetState()`.
+
+### Constructors
+
+<ParamField body="keys" type="Keys[]">
+  Array of keys to mark as pressed. Useful for unit-testing input logic without physical hardware.
+</ParamField>
+<ParamField body="capsLock" type="bool">
+  Initial state of the Caps Lock indicator. Defaults to `false`.
+</ParamField>
+<ParamField body="numLock" type="bool">
+  Initial state of the Num Lock indicator. Defaults to `false`.
+</ParamField>
+
+```csharp
+// Construct a synthetic state with A and Left Shift held
+var state = new KeyboardState(Keys.A, Keys.LeftShift);
+```
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `CapsLock` | `bool` | `true` if Caps Lock is currently active. |
+| `NumLock` | `bool` | `true` if Num Lock is currently active. |
+| `this[Keys key]` | `KeyState` | Indexer — returns `KeyState.Down` or `KeyState.Up` for the specified key. |
+
+### Methods
+
+| Signature | Returns | Description |
+|-----------|---------|-------------|
+| `IsKeyDown(Keys key)` | `bool` | `true` if the key is currently held. |
+| `IsKeyUp(Keys key)` | `bool` | `true` if the key is currently released. |
+| `GetPressedKeys()` | `Keys[]` | Returns a new array of every key that is currently down. |
+| `GetPressedKeys(Keys[] keys)` | `void` | Fills a pre-allocated array — avoids GC pressure. Call `GetPressedKeyCount()` first to size the array. |
+| `GetPressedKeyCount()` | `int` | Returns the number of keys currently held. |
+
+<Tip>
+Prefer `GetPressedKeyCount()` + the array-overload of `GetPressedKeys(Keys[])` in hot paths to avoid a heap allocation every frame.
+</Tip>
+
+---
+
+## Keys Enum
+
+`Keys` maps physical and virtual keys to integer codes. The table below lists the most commonly used members grouped by category.
+
+| Category | Values |
+|----------|--------|
+| **Alphanumeric** | `A`–`Z`, `D0`–`D9` (top-row digits), `NumPad0`–`NumPad9` |
+| **Function** | `F1`–`F24` |
+| **Navigation** | `Left`, `Right`, `Up`, `Down`, `PageUp`, `PageDown`, `Home`, `End` |
+| **Modifiers** | `LeftShift`, `RightShift`, `LeftControl`, `RightControl`, `LeftAlt`, `RightAlt`, `CapsLock`, `NumLock` |
+| **Common** | `Space`, `Enter`, `Tab`, `Escape`, `Back` (Backspace), `Delete`, `Insert` |
+| **Punctuation** | `OemComma`, `OemPeriod`, `OemSemicolon`, `OemQuestion`, `OemQuotes`, `OemOpenBrackets`, `OemCloseBrackets`, `OemPipe`, `OemMinus`, `OemPlus` |
+
+<Note>
+Top-row digit keys are accessed as `Keys.D0`–`Keys.D9`. Do not confuse them with `Keys.NumPad0`–`Keys.NumPad9`, which are the numpad equivalents.
+</Note>
+
+---
+
+## Mouse
+
+`Mouse` is a static class for reading cursor position and button state relative to the game window.
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `WindowHandle` | `IntPtr` | Gets or sets the native window handle used to capture mouse input. |
+
+### Methods
+
+| Signature | Returns | Description |
+|-----------|---------|-------------|
+| `Mouse.GetState()` | `MouseState` | Reads state relative to the primary window. |
+| `Mouse.GetState(GameWindow window)` | `MouseState` | Reads state relative to a specific `GameWindow`. MonoGame extension — not part of XNA. |
+| `Mouse.SetPosition(int x, int y)` | `void` | Warps the cursor to a position relative to the game window. |
+| `Mouse.SetCursor(MouseCursor cursor)` | `void` | Changes the cursor image. |
+
+### Example
+
+```csharp
+MouseState prevMouse;
+MouseState currMouse;
+
+protected override void Update(GameTime gameTime)
+{
+    prevMouse = currMouse;
+    currMouse = Mouse.GetState();
+
+    // Detect left-click
+    if (currMouse.LeftButton == ButtonState.Pressed &&
+        prevMouse.LeftButton == ButtonState.Released)
+    {
+        HandleClick(currMouse.X, currMouse.Y);
+    }
+
+    // Scroll delta
+    int scrollDelta = currMouse.ScrollWheelValue - prevMouse.ScrollWheelValue;
+    camera.Zoom += scrollDelta * 0.001f;
+}
+```
+
+---
+
+## MouseState
+
+`MouseState` is a value-type snapshot of mouse position and button states.
+
+### Constructors
+
+<ParamField body="x" type="int">Horizontal cursor position relative to the window's client area.</ParamField>
+<ParamField body="y" type="int">Vertical cursor position relative to the window's client area.</ParamField>
+<ParamField body="scrollWheel" type="int">Cumulative vertical scroll wheel value.</ParamField>
+<ParamField body="leftButton" type="ButtonState">State of the left mouse button.</ParamField>
+<ParamField body="middleButton" type="ButtonState">State of the middle mouse button.</ParamField>
+<ParamField body="rightButton" type="ButtonState">State of the right mouse button.</ParamField>
+<ParamField body="xButton1" type="ButtonState">State of the first extra button (XBUTTON1).</ParamField>
+<ParamField body="xButton2" type="ButtonState">State of the second extra button (XBUTTON2).</ParamField>
+<ParamField body="horizontalScrollWheel" type="int">Cumulative horizontal scroll wheel value (optional overload).</ParamField>
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `X` | `int` | Horizontal cursor position in window client coordinates. |
+| `Y` | `int` | Vertical cursor position in window client coordinates. |
+| `Position` | `Point` | `(X, Y)` as a `Point`. |
+| `LeftButton` | `ButtonState` | State of the primary (left) button. |
+| `RightButton` | `ButtonState` | State of the secondary (right) button. |
+| `MiddleButton` | `ButtonState` | State of the scroll-wheel click button. |
+| `XButton1` | `ButtonState` | State of the first side button. |
+| `XButton2` | `ButtonState` | State of the second side button. |
+| `ScrollWheelValue` | `int` | Cumulative vertical scroll since application start. Increases on scroll-up, decreases on scroll-down. Compare frames to get a delta. |
+| `HorizontalScrollWheelValue` | `int` | Cumulative horizontal scroll since application start. |
+
+<Warning>
+`ScrollWheelValue` is a **cumulative** counter, not a per-frame delta. Always subtract the previous frame's value to get the amount scrolled this frame.
+</Warning>
+
+---
+
+## ButtonState Enum
+
+Used for mouse buttons and gamepad D-pad directions.
+
+| Value | Description |
+|-------|-------------|
+| `ButtonState.Released` | The button is not pressed. |
+| `ButtonState.Pressed` | The button is currently held. |
+
+---
+
+## GamePad
+
+`GamePad` is a static class that queries controllers connected to the system.
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `MaximumGamePadCount` | `int` | The platform-specific maximum number of simultaneously connected gamepads. |
+
+### Methods
+
+| Signature | Returns | Description |
+|-----------|---------|-------------|
+| `GetState(PlayerIndex)` | `GamePadState` | Returns state for the given player using `IndependentAxes` dead zone. |
+| `GetState(PlayerIndex, GamePadDeadZone)` | `GamePadState` | Returns state with the specified dead zone applied to both sticks. |
+| `GetState(PlayerIndex, GamePadDeadZone left, GamePadDeadZone right)` | `GamePadState` | Returns state with independent dead zones for each stick. |
+| `GetState(int index)` | `GamePadState` | Integer-indexed variant, not limited to the four `PlayerIndex` values. |
+| `GetCapabilities(PlayerIndex)` | `GamePadCapabilities` | Returns capability flags for the given controller. |
+| `SetVibration(PlayerIndex, float leftMotor, float rightMotor)` | `bool` | Sets rumble intensity (0–1). Returns `false` if unsupported. |
+| `SetVibration(PlayerIndex, float left, float right, float leftTrigger, float rightTrigger)` | `bool` | Extended vibration including Xbox One trigger motors. |
+
+<ParamField body="playerIndex" type="PlayerIndex">
+  One of `PlayerIndex.One` through `PlayerIndex.Four`.
+</ParamField>
+<ParamField body="leftMotor" type="float">
+  Speed of the low-frequency (left) rumble motor, clamped to `[0.0, 1.0]`.
+</ParamField>
+<ParamField body="rightMotor" type="float">
+  Speed of the high-frequency (right) rumble motor, clamped to `[0.0, 1.0]`.
+</ParamField>
+
+### Example
+
+```csharp
+GamePadState pad = GamePad.GetState(PlayerIndex.One);
+
+if (pad.IsConnected)
+{
+    Vector2 move = pad.ThumbSticks.Left;
+    player.Position += move * speed * deltaTime;
+
+    if (pad.IsButtonDown(Buttons.A))
+        player.Jump();
+
+    // Trigger-based acceleration
+    float throttle = pad.Triggers.Right;
+    vehicle.Speed += throttle * acceleration * deltaTime;
+}
+```
+
+---
+
+## GamePadState
+
+`GamePadState` is a value-type snapshot of a gamepad's full input state.
+
+### Constructors
+
+```csharp
+// Construct from individual sub-structs
+new GamePadState(GamePadThumbSticks, GamePadTriggers, GamePadButtons, GamePadDPad)
+
+// Construct from raw values (useful for simulating input)
+new GamePadState(Vector2 leftThumb, Vector2 rightThumb,
+                 float leftTrigger, float rightTrigger,
+                 Buttons buttons)
+```
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `IsConnected` | `bool` | `true` if a physical controller is connected at this index. |
+| `PacketNumber` | `int` | Changes when any input changes. Compare frames to detect any input activity. |
+| `Buttons` | `GamePadButtons` | Face buttons, shoulders, Start, Back, and stick-click states. |
+| `DPad` | `GamePadDPad` | Four directional pad directions, each as a `ButtonState`. |
+| `ThumbSticks` | `GamePadThumbSticks` | Analog stick positions. |
+| `Triggers` | `GamePadTriggers` | Analog trigger values. |
+
+### Methods
+
+| Signature | Returns | Description |
+|-----------|---------|-------------|
+| `IsButtonDown(Buttons button)` | `bool` | `true` if the specified button(s) are all held. Supports bitwise OR combinations. |
+| `IsButtonUp(Buttons button)` | `bool` | `true` if the specified button(s) are not fully held. |
+
+<Note>
+`IsButtonDown` also works with "virtual" buttons like `Buttons.LeftThumbstickLeft` that map analog stick deflection to a digital state.
+</Note>
+
+---
+
+## GamePadThumbSticks
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `Left` | `Vector2` | Left analog stick position. X and Y are each clamped to `[-1.0, 1.0]`. Negative Y is down. |
+| `Right` | `Vector2` | Right analog stick position with the same range. |
+
+---
+
+## GamePadTriggers
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `Left` | `float` | Left trigger value in the range `[0.0, 1.0]`. |
+| `Right` | `float` | Right trigger value in the range `[0.0, 1.0]`. |
+
+---
+
+## GamePadDPad
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `Up` | `ButtonState` | D-pad up direction. |
+| `Down` | `ButtonState` | D-pad down direction. |
+| `Left` | `ButtonState` | D-pad left direction. |
+| `Right` | `ButtonState` | D-pad right direction. |
+
+---
+
+## GamePadDeadZone Enum
+
+Controls how the framework filters out small, unintentional analog stick drift.
+
+| Value | Description |
+|-------|-------------|
+| `None` | Raw axis values are returned with no dead zone applied. |
+| `IndependentAxes` | Dead zone is applied independently to X and Y axes (default). |
+| `Circular` | Dead zone is applied radially — better for games requiring precise directional movement. |
+
+---
+
+## GamePadCapabilities
+
+Returned by `GamePad.GetCapabilities()` to describe what a specific controller supports.
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `IsConnected` | `bool` | Whether a controller is plugged in at this index. |
+| `DisplayName` | `string` | Human-readable name of the device. Not available in XNA. |
+| `Identifier` | `string` | Unique hardware identifier string. Not available in XNA. |
+| `GamePadType` | `GamePadType` | Enum describing the type of controller (e.g., `GamePad`, `Wheel`, `ArcadeStick`). |
+| `HasAButton`, `HasBButton`, `HasXButton`, `HasYButton` | `bool` | Face button presence. |
+| `HasLeftShoulderButton`, `HasRightShoulderButton` | `bool` | Shoulder bumper presence. |
+| `HasLeftTrigger`, `HasRightTrigger` | `bool` | Analog trigger presence. |
+| `HasLeftXThumbStick`, `HasLeftYThumbStick` | `bool` | Left stick axes. |
+| `HasRightXThumbStick`, `HasRightYThumbStick` | `bool` | Right stick axes. |
+| `HasLeftVibrationMotor`, `HasRightVibrationMotor` | `bool` | Rumble motor presence. |
+| `HasVoiceSupport` | `bool` | Headset microphone availability. |
+| `HasDPadUpButton`, `HasDPadDownButton`, `HasDPadLeftButton`, `HasDPadRightButton` | `bool` | D-pad direction presence. |
+| `HasStartButton`, `HasBackButton`, `HasBigButton` | `bool` | Menu/guide button presence. |
+
+---
+
+## Joystick
+
+`Joystick` provides raw, low-level access to HID joystick devices without mapping to the XInput model. Unlike `GamePad`, it imposes no fixed button count or axis layout.
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `IsSupported` | `bool` | `true` if the current platform supports raw joystick access. |
+| `LastConnectedIndex` | `int` | The highest index among currently or previously connected joysticks. `-1` if none. |
+
+### Methods
+
+| Signature | Returns | Description |
+|-----------|---------|-------------|
+| `GetState(int index)` | `JoystickState` | Returns the current state of the joystick at the given zero-based index. |
+| `GetState(ref JoystickState joystickState, int index)` | `void` | Updates an existing `JoystickState` in place — avoids allocation. |
+| `GetCapabilities(int index)` | `JoystickCapabilities` | Returns capability metadata for the device at the given index. |
+
+---
+
+## JoystickState
+
+`JoystickState` is a value-type snapshot of a raw joystick.
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `IsConnected` | `bool` | `true` if a device is present at this index. |
+| `Axes` | `int[]` | Raw axis values. Range and meaning depend on the device. |
+| `Buttons` | `ButtonState[]` | One `ButtonState` per button reported by the device. |
+| `Hats` | `JoystickHat[]` | Hat-switch (POV hat) states, each exposing `Up`, `Down`, `Left`, `Right` as `ButtonState`. |
+
+<Note>
+The `Axes` array uses integer values instead of floats. Scale to `[-1, 1]` by dividing by `short.MaxValue` (32767) for comparison with `GamePad` conventions.
+</Note>
+
+### Example
+
+```csharp
+if (Joystick.IsSupported)
+{
+    JoystickState js = Joystick.GetState(0);
+    if (js.IsConnected)
+    {
+        float xAxis = js.Axes[0] / 32767f;
+        float yAxis = js.Axes[1] / 32767f;
+        bool fire = js.Buttons[0] == ButtonState.Pressed;
+    }
+}
+```
